@@ -1176,3 +1176,107 @@ fn test_claim_with_flexible_destination() {
     assert_eq!(ephemeral_client.get_status(), AccountStatus::Swept);
     assert_eq!(ephemeral_client.get_info().swept_to, Some(any_recipient));
 }
+
+/// SweepExecutedMulti event is emitted with every asset's payment on a
+/// multi-asset claim, not just the summed SweepCompleted event.
+#[test]
+fn test_claim_emits_sweep_executed_multi_with_all_assets() {
+    let env = Env::default();
+
+    let (controller_client, controller_id, ephemeral_client, ephemeral_id) = deploy_contracts(&env);
+
+    let controller_creator = Address::generate(&env);
+    let (authorized_signer, _) = generate_test_keypair(&env);
+    let recipient = Address::generate(&env);
+
+    controller_client
+        .mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &controller_creator,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &controller_id,
+                fn_name: "initialize",
+                args: (
+                    &controller_creator,
+                    &authorized_signer,
+                    &Some(recipient.clone()),
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .initialize(
+            &controller_creator,
+            &authorized_signer,
+            &Some(recipient.clone()),
+        );
+
+    let account_creator = Address::generate(&env);
+    let recovery = Address::generate(&env);
+    let expiry = env.ledger().sequence() + 1_000;
+
+    ephemeral_client
+        .mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &account_creator,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &ephemeral_id,
+                fn_name: "initialize",
+                args: (
+                    &account_creator,
+                    &expiry,
+                    &recovery,
+                    &controller_id,
+                    &account_creator,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .initialize(
+            &account_creator,
+            &expiry,
+            &recovery,
+            &controller_id,
+            &account_creator,
+        );
+
+    let asset1 = Address::generate(&env);
+    let asset2 = Address::generate(&env);
+    env.mock_all_auths_allowing_non_root_auth();
+    ephemeral_client.record_payment(&100, &asset1);
+    ephemeral_client.record_payment(&250, &asset2);
+    env.set_auths(&[]);
+
+    controller_client
+        .mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &recipient,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &controller_client.address,
+                fn_name: "claim",
+                args: (&recipient, &ephemeral_id).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .claim(&recipient, &ephemeral_id);
+
+    let events = env.events().all();
+    let mut found_multi_event = false;
+    for i in 0..events.len() {
+        let (_contract, topics, data) = events.get_unchecked(i);
+        if let Ok(sym) = Symbol::try_from_val(&env, &topics.get(0).unwrap()) {
+            if sym == soroban_sdk::symbol_short!("swp_multi") {
+                let decoded: sweep_controller::SweepExecutedMulti =
+                    sweep_controller::SweepExecutedMulti::try_from_val(&env, &data).unwrap();
+                assert_eq!(decoded.destination, recipient);
+                assert_eq!(decoded.payments.len(), 2);
+                let total: i128 = decoded.payments.iter().map(|p| p.amount).sum();
+                assert_eq!(total, 350);
+                found_multi_event = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        found_multi_event,
+        "SweepExecutedMulti event should be emitted with all payments"
+    );
+}

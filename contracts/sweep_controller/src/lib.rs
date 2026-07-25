@@ -116,6 +116,19 @@ impl SweepController {
         let amount: i128 = info.payments.iter().map(|p| p.amount).sum();
 
         Self::authorize_claim(&env, &ephemeral_account, &recipient)?;
+
+        // Same conversion note as sweep_account(): info.payments is the
+        // contractimport!-generated Payment type, not bridgelet_shared::Payment.
+        let mut payments_vec = Vec::new(&env);
+        for payment in info.payments.iter() {
+            payments_vec.push_back(Payment {
+                asset: payment.asset.clone(),
+                amount: payment.amount,
+                timestamp: payment.timestamp,
+            });
+        }
+
+        emit_sweep_executed_multi(&env, recipient.clone(), payments_vec);
         emit_sweep_completed(&env, ephemeral_account, recipient, amount);
 
         Ok(())
@@ -209,7 +222,8 @@ impl SweepController {
         transfers::execute_transfers(env, &ephemeral_account, &destination, &payments_vec)
             .map_err(|_| Error::TransferFailed)?;
 
-        // Emit sweep completed event after successful transfer.
+        // Emit the per-asset breakdown, then the summed completion event.
+        emit_sweep_executed_multi(env, destination.clone(), payments_vec);
         emit_sweep_completed(env, ephemeral_account, destination, amount);
 
         Ok(())
@@ -341,6 +355,15 @@ pub struct SweepCompleted {
     pub amount: i128,
 }
 
+/// Multi-asset sweep event: full per-asset payment breakdown for a sweep,
+/// emitted alongside the summed SweepCompleted event.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SweepExecutedMulti {
+    pub destination: Address,
+    pub payments: Vec<Payment>,
+}
+
 /// Destination authorized event (emitted when destination is set during initialization)
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -364,6 +387,15 @@ fn emit_sweep_completed(env: &Env, account: Address, destination: Address, amoun
     };
     env.events()
         .publish((soroban_sdk::symbol_short!("sweep"),), event);
+}
+
+fn emit_sweep_executed_multi(env: &Env, destination: Address, payments: Vec<Payment>) {
+    let event = SweepExecutedMulti {
+        destination,
+        payments,
+    };
+    env.events()
+        .publish((soroban_sdk::symbol_short!("swp_multi"),), event);
 }
 
 fn emit_destination_authorized(env: &Env, destination: Address) {
