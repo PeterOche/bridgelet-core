@@ -17,6 +17,14 @@ use soroban_sdk::{contracttype, Address, BytesN, Env};
 /// Each variant is a distinct instance-storage key. Instance storage is
 /// automatically namespaced per deployed contract instance by the Soroban
 /// host, preventing cross-instance collisions.
+const INSTANCE_TTL_THRESHOLD: u32 = 100;
+const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
+
+pub fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+}
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
