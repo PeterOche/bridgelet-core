@@ -1,4 +1,3 @@
-use crate::errors::Error;
 use bridgelet_shared::Payment;
 use soroban_sdk::token::TokenClient;
 use soroban_sdk::{Address, Env, Vec};

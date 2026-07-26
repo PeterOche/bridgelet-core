@@ -11,7 +11,7 @@ mod test;
 use ephemeral_account::EphemeralAccountContractClient as EphemeralAccountClient;
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, IntoVal, Vec,
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 use authorization::AuthContext;
@@ -110,7 +110,7 @@ impl SweepController {
     /// # Errors
     /// Returns Error::AuthorizationFailed if signature is invalid
     /// Returns Error::InvalidAccount if account is not in valid state
-    /// Returns Error::TransferFailed if token transfer fails
+    /// Returns Error::AccountNotReady if account state is invalid
     /// Returns Error::UnauthorizedDestination if destination doesn't match authorized destination (when set)
     pub fn execute_sweep(
         env: Env,
@@ -228,8 +228,7 @@ impl SweepController {
             });
         }
 
-        transfers::execute_transfers(env, &ephemeral_account, &destination, &payments_vec)
-            .map_err(|_| Error::TransferFailed)?;
+        transfers::execute_transfers(env, &ephemeral_account, &destination, &payments_vec);
 
         // Emit the per-asset breakdown, then the summed completion event.
         emit_sweep_executed_multi(env, destination.clone(), payments_vec);
