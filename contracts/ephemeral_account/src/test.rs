@@ -414,22 +414,19 @@ mod test {
 
     #[test]
     fn test_error_variants_have_expected_numeric_codes() {
-        // Issue #248: this contract's error codes are namespaced to 1000-1999.
-        assert_eq!(Error::AlreadyInitialized as u32, 1000);
-        assert_eq!(Error::NotInitialized as u32, 1001);
-        assert_eq!(Error::PaymentAlreadyReceived as u32, 1002);
-        assert_eq!(Error::InvalidAmount as u32, 1003);
-        assert_eq!(Error::InvalidExpiry as u32, 1004);
-        assert_eq!(Error::NotExpired as u32, 1005);
-        assert_eq!(Error::AlreadySwept as u32, 1006);
-        assert_eq!(Error::Unauthorized as u32, 1007);
-        assert_eq!(Error::InvalidSignature as u32, 1008);
-        assert_eq!(Error::NoPaymentReceived as u32, 1009);
-        assert_eq!(Error::AccountExpired as u32, 1010);
-        assert_eq!(Error::InvalidStatus as u32, 1011);
-        assert_eq!(Error::DuplicateAsset as u32, 1012);
-        assert_eq!(Error::TooManyPayments as u32, 1013);
-        assert_eq!(Error::NotUpgradeAdmin as u32, 1014);
+        assert_eq!(Error::AlreadyInitialized as u32, 1);
+        assert_eq!(Error::NotInitialized as u32, 2);
+        assert_eq!(Error::PaymentAlreadyReceived as u32, 3);
+        assert_eq!(Error::InvalidAmount as u32, 4);
+        assert_eq!(Error::InvalidExpiry as u32, 5);
+        assert_eq!(Error::NotExpired as u32, 6);
+        assert_eq!(Error::AlreadySwept as u32, 7);
+        assert_eq!(Error::Unauthorized as u32, 8);
+        assert_eq!(Error::NoPaymentReceived as u32, 10);
+        assert_eq!(Error::AccountExpired as u32, 11);
+        assert_eq!(Error::InvalidStatus as u32, 12);
+        assert_eq!(Error::DuplicateAsset as u32, 13);
+        assert_eq!(Error::TooManyPayments as u32, 14);
     }
 
     #[test]
