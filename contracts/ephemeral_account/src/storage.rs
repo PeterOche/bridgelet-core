@@ -18,6 +18,7 @@ pub enum DataKey {
     ReserveEventCount,
     LastReserveEvent,
     AuthorizedController,
+    AuthorizedSigner,
     Admin,
 }
 
@@ -236,4 +237,15 @@ pub fn extend_instance_ttl(env: &Env) {
     env.storage()
         .instance()
         .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+}
+
+// Authorized signer (Ed25519 public key for sweep signature verification)
+pub fn set_authorized_signer(env: &Env, signer: &soroban_sdk::BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::AuthorizedSigner, signer);
+}
+
+pub fn get_authorized_signer(env: &Env) -> Option<soroban_sdk::BytesN<32>> {
+    env.storage().instance().get(&DataKey::AuthorizedSigner)
 }

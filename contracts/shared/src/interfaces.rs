@@ -20,16 +20,16 @@ pub trait EphemeralAccountInterface {
         expiry_ledger: u32,
         recovery_address: Address,
         authorized_controller: Address,
+        authorized_signer: BytesN<32>,
         admin: Address,
     ) -> Result<(), Self::Error>;
 
     /// Record an inbound payment to this account.
     fn record_payment(env: Env, amount: i128, asset: Address) -> Result<(), Self::Error>;
 
-    /// Sweep funds to `destination`. `auth_signature` is accepted but not
-    /// cryptographically verified by this contract.
-    fn sweep(env: Env, destination: Address, auth_signature: BytesN<64>)
-        -> Result<(), Self::Error>;
+    /// Sweep funds to `destination`. `auth_signature` is verified against the
+    /// stored authorized signer's Ed25519 public key.
+    fn sweep(env: Env, destination: Address, auth_signature: BytesN<64>) -> Result<(), Self::Error>;
 
     /// Gas-free sweep path used by the sweep controller's claim flow.
     fn sweep_claim(env: Env, destination: Address) -> Result<(), Self::Error>;

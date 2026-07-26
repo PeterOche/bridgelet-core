@@ -39,6 +39,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -68,6 +69,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
@@ -95,6 +97,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -129,12 +132,13 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
 
         assert_eq!(client.get_status(), AccountStatus::Swept);
         assert_eq!(client.get_reserve_remaining(), 0);
@@ -167,6 +171,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
@@ -192,6 +197,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -235,6 +241,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         let result = client.try_record_payment(&0, &asset);
@@ -258,6 +265,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -280,6 +288,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         let result = client.try_expire();
@@ -304,10 +313,11 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        let result = client.try_sweep(&destination, &auth_sig);
+
+        let result = client.try_sweep_claim(&destination);
 
         assert!(matches!(result, Err(Ok(Error::NoPaymentReceived))));
     }
@@ -330,13 +340,14 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
         env.ledger().set_sequence_number(expiry_ledger);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        let result = client.try_sweep(&destination, &auth_sig);
+
+        let result = client.try_sweep_claim(&destination);
 
         assert!(matches!(result, Err(Ok(Error::AccountExpired))));
     }
@@ -359,13 +370,14 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
-        let replay_result = client.try_sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
+        let replay_result = client.try_sweep_claim(&destination);
 
         assert!(matches!(replay_result, Err(Ok(Error::AlreadySwept))));
     }
@@ -388,12 +400,13 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        let result = client.try_sweep(&destination, &auth_sig);
+
+        let result = client.try_sweep_claim(&destination);
         println!("sweep placeholder auth result: {:?}", result);
 
         assert!(matches!(result, Ok(Ok(()))));
@@ -438,6 +451,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -446,8 +460,8 @@ mod test {
         client.record_payment(&100, &asset1);
         client.record_payment(&200, &asset2);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
 
         assert_eq!(client.get_status(), AccountStatus::Swept);
         assert_eq!(client.get_reserve_remaining(), 0);
@@ -481,12 +495,13 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
 
         assert_eq!(client.get_reserve_remaining(), 0);
         assert!(client.is_reserve_reclaimed());
@@ -523,6 +538,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
@@ -532,8 +548,8 @@ mod test {
             storage::set_available_reserve(&env, initial_available);
         });
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
 
         let expected_remaining = BASE_RESERVE_STROOPS - initial_available;
         assert_eq!(client.get_status(), AccountStatus::Swept);
@@ -586,16 +602,17 @@ mod test {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
 
         let reserve_events_before = client.get_reserve_reclaim_event_count();
         let replay_attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.sweep(&destination, &auth_sig);
+            client.sweep_claim(&destination);
         }));
 
         assert!(replay_attempt.is_err());
@@ -626,6 +643,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.initialize(
@@ -633,6 +651,7 @@ mod test {
             &(expiry_ledger + 1),
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
     }
@@ -656,6 +675,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
@@ -682,14 +702,15 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
 
         env.ledger().set_sequence_number(expiry_ledger);
 
-        let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-        client.sweep(&destination, &auth_sig);
+
+        client.sweep_claim(&destination);
     }
 
     #[test]
@@ -710,6 +731,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
@@ -741,6 +763,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         println!("initialize auth result: {:?}", result);
@@ -768,6 +791,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
@@ -797,6 +821,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -823,6 +848,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -848,6 +874,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         env.ledger().set_sequence_number(expiry_ledger);
@@ -877,6 +904,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &admin,
         );
 
@@ -910,6 +938,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&500, &asset);
@@ -938,6 +967,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -965,6 +995,7 @@ mod test {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
         client.record_payment(&100, &asset);
