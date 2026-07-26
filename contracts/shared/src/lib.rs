@@ -8,7 +8,13 @@ mod types;
 #[cfg(test)]
 pub mod test_utils;
 
+mod events;
 pub mod interfaces;
+
+pub use events::{
+    AccountCreated, AccountExpired, MultiPaymentReceived, PaymentReceived, ReserveReclaimed,
+    SweepExecutedMulti,
+};
 
 pub use interfaces::{EphemeralAccountInterface, SweepControllerInterface};
 

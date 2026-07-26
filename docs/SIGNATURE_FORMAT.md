@@ -10,6 +10,13 @@ The sweep controller uses **Ed25519 signature verification** to ensure only auth
 
 ## Message Construction
 
+> **Update (Issue #29):** the signed message now includes the **ephemeral
+> account address** as its first component. This binds a signature to the
+> specific account it authorizes, so a captured signature can no longer be
+> replayed against a different ephemeral account served by the same controller.
+> Signatures produced against the previous three-component format will no
+> longer verify — off-chain signers must prepend the account XDR bytes.
+
 The message to be signed is constructed as follows:
 
 ```
@@ -24,7 +31,7 @@ message = SHA256(
 ### Components
 
 1. **account_address_xdr** (variable length)
-   - The ephemeral account address the sweep authorizes
+   - The ephemeral account the sweep authorizes
    - Serialized as XDR bytes using `soroban_sdk::Address::to_xdr(&env)`
    - Binds the signature to one specific account so it cannot be replayed against another
 
@@ -340,6 +347,7 @@ The off-chain system should:
 
 ### Signature Validity
 
+- Signatures are **bound to a specific ephemeral account** via account_address — a signature authorizing one account cannot be replayed against another account served by the same controller
 - Signatures are **bound to a specific contract deployment** via contract_id
 - Signatures are **bound to a specific ephemeral account** via the account component, so a captured signature cannot be replayed against a different account
 - Signatures cannot be used against a different deployment
@@ -359,7 +367,7 @@ The off-chain system should:
 
 ### "SignatureVerificationFailed" Error
 - The signature does not match the expected message
-- Verify that all message components are constructed correctly, in order: destination XDR, then 8-byte big-endian nonce, then contract ID XDR — no timestamp
+- Verify that all message components are constructed correctly, in order: account XDR, then destination XDR, then 8-byte big-endian nonce, then contract ID XDR — no timestamp
 - Ensure the correct public key is being used for verification
 - Check that the nonce used matches the contract's current `get_nonce()` value at the moment of signing — it may have advanced since you last checked
 

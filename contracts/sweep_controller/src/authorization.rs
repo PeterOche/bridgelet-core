@@ -14,7 +14,7 @@ const ED25519_SIGNATURE_LEN: usize = 64;
 /// produces a different hash, which invalidates the signature — this is the
 /// core replay-prevention mechanism.
 ///
-/// Message format: SHA256(destination || nonce_be64 || contract_id)
+/// Message format: SHA256(account || destination || nonce_be64 || contract_id)
 ///
 /// # Security notes
 /// - The nonce is included to bind each signature to exactly one sweep
@@ -23,6 +23,8 @@ const ED25519_SIGNATURE_LEN: usize = 64;
 /// - The contract_id (sweep controller address) is included to bind the
 ///   signature to this specific contract instance, preventing cross-
 ///   contract replay attacks.
+/// - The account is included to bind the signature to a specific ephemeral
+///   account, preventing cross-account replay attacks. (#29)
 /// - No hardcoded keys, addresses, or magic values are used.  All inputs
 ///   are derived from on-chain state or caller arguments.
 ///
@@ -34,7 +36,12 @@ const ED25519_SIGNATURE_LEN: usize = 64;
 ///
 /// # Returns
 /// BytesN<32> containing the SHA-256 hash of the message components
-fn construct_sweep_message(env: &Env, destination: &Address, contract_id: &Address) -> BytesN<32> {
+fn construct_sweep_message(
+    env: &Env,
+    account: &Address,
+    destination: &Address,
+    contract_id: &Address,
+) -> BytesN<32> {
     // ── 1. Read current nonce from persistent storage ──────────────────
     // The nonce starts at 0 and increments after every successful sweep.
     // Including it in the signed message ensures each signature is
@@ -43,12 +50,17 @@ fn construct_sweep_message(env: &Env, destination: &Address, contract_id: &Addre
 
     // ── 2. Concatenate message components ──────────────────────────────
     // We build a byte buffer containing:
-    //   [destination_xdr | nonce_big_endian | contract_id_xdr]
+    //   [account_xdr | destination_xdr | nonce_big_endian | contract_id_xdr]
     //
     // Using XDR serialization for addresses ensures a canonical
     // byte representation that is identical across all Soroban
     // environments and SDK versions.
     let mut message = soroban_sdk::Bytes::new(env);
+
+    // Ephemeral account address (XDR-serialized) — binds the signature
+    // to a specific account so it cannot be replayed on another account.
+    let account_bytes = account.to_xdr(env);
+    message.append(&account_bytes);
 
     // Destination address (XDR-serialized)
     let dest_bytes = destination.to_xdr(env);
@@ -175,9 +187,9 @@ pub fn verify_sweep_auth(
 
     // ── Step 5: Reconstruct the expected signed message ────────────────
     // The off-chain signer should have signed:
-    //   SHA256(destination || nonce || contract_id)
+    //   SHA256(account || destination || nonce || contract_id)
     // using the current nonce at the time of signing.
-    let message = construct_sweep_message(env, destination, &contract_id);
+    let message = construct_sweep_message(env, account, destination, &contract_id);
 
     // ── Step 6: Ed25519 signature verification ─────────────────────────
     // This performs constant-time cryptographic verification.

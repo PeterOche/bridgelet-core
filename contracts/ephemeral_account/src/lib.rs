@@ -8,12 +8,11 @@ mod test;
 
 use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, BytesN, Env, Vec};
 
-pub use bridgelet_shared::{AccountInfo, AccountStatus, EphemeralAccountInterface, Payment};
-pub use errors::Error;
-pub use events::{
-    AccountCreated, AccountExpired, MultiPaymentReceived, PaymentReceived, ReserveReclaimed,
-    SweepExecutedMulti,
+pub use bridgelet_shared::{
+    AccountCreated, AccountExpired, AccountInfo, AccountStatus, EphemeralAccountInterface,
+    MultiPaymentReceived, Payment, PaymentReceived, ReserveReclaimed, SweepExecutedMulti,
 };
+pub use errors::Error;
 pub use storage::DataKey;
 
 /// Expected network passphrase for this deployment.
