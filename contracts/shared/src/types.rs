@@ -20,7 +20,6 @@ pub enum AccountStatus {
     Expired = 3,
 }
 
-/// Account information structure
 #[derive(Clone)]
 #[contracttype]
 pub struct AccountInfo {
@@ -34,7 +33,6 @@ pub struct AccountInfo {
     pub swept_to: Option<Address>,
 }
 
-/// Request to initialize a single ephemeral account
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct AccountInitRequest {
@@ -42,7 +40,6 @@ pub struct AccountInitRequest {
     pub recovery_address: Address,
 }
 
-/// Result of initializing an ephemeral account
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct AccountInitResult {

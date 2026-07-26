@@ -2,6 +2,11 @@ use crate::errors::Error;
 use crate::storage;
 use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env};
 
+/// Ed25519 public key length in bytes.
+const ED25519_PUBLIC_KEY_LEN: usize = 32;
+/// Ed25519 signature length in bytes.
+const ED25519_SIGNATURE_LEN: usize = 64;
+
 /// Construct the message to be signed for sweep authorization.
 ///
 /// The off-chain signer must produce an Ed25519 signature over this exact
@@ -71,6 +76,28 @@ fn construct_sweep_message(env: &Env, destination: &Address, contract_id: &Addre
     env.crypto().sha256(&message).into()
 }
 
+/// Validate that a bytesN<32> value has the correct length for an
+/// Ed25519 public key.  This is a defence-in-depth check — Soroban's
+/// `BytesN<32>` type already enforces length at the type level, but
+/// explicit validation provides clearer error messages.
+fn validate_signer_key(signer: &BytesN<32>) -> Result<(), Error> {
+    // BytesN<32> is always 32 bytes by construction in Soroban, so this
+    // is technically always true.  The check exists for documentation
+    // purposes and as a safeguard against future type changes.
+    if signer.to_buffer().len() != ED25519_PUBLIC_KEY_LEN {
+        return Err(Error::InvalidSignature);
+    }
+    Ok(())
+}
+
+/// Validate that a signature has the correct length for Ed25519.
+fn validate_signature_length(signature: &BytesN<64>) -> Result<(), Error> {
+    if signature.to_buffer().len() != ED25519_SIGNATURE_LEN {
+        return Err(Error::InvalidSignature);
+    }
+    Ok(())
+}
+
 /// Verify sweep authorization signature using Ed25519.
 ///
 /// This function verifies that the provided signature was created by the
@@ -79,18 +106,24 @@ fn construct_sweep_message(env: &Env, destination: &Address, contract_id: &Addre
 ///
 /// ## Auth check breakdown
 ///
-/// 1. **Signer existence check** — `get_authorized_signer()` returns
+/// 1. **Validate signature format** — Ensure the signature is exactly 64
+///    bytes (Ed25519 signature length).
+///
+/// 2. **Signer existence check** — `get_authorized_signer()` returns
 ///    `None` if `initialize()` was never called.  We return
 ///    `AuthorizedSignerNotSet` rather than panicking so the caller gets
 ///    a recoverable error.
 ///
-/// 2. **Message reconstruction** — We rebuild the exact same byte sequence
+/// 3. **Validate signer key format** — Ensure the stored key is exactly
+///    32 bytes (Ed25519 public key length).
+///
+/// 4. **Message reconstruction** — We rebuild the exact same byte sequence
 ///    the off-chain signer should have signed, using the *current* nonce.
 ///    If the nonce has advanced since the signature was produced (e.g.,
 ///    another sweep was executed), verification will fail — this is the
 ///    replay-prevention guarantee.
 ///
-/// 3. **Ed25519 verification** — `env.crypto().ed25519_verify()` performs
+/// 5. **Ed25519 verification** — `env.crypto().ed25519_verify()` performs
 ///    constant-time comparison of the signature against the public key and
 ///    message hash.  It returns `()` on success or panics on failure.
 ///    We do *not* catch the panic here because a failed signature check
@@ -122,25 +155,31 @@ pub fn verify_sweep_auth(
     destination: &Address,
     signature: &BytesN<64>,
 ) -> Result<(), Error> {
-    // ── Step 1: Retrieve the authorized signer's public key ────────────
+    // Step 1: Validate signature format
+    validate_signature_length(signature)?;
+
+    // ── Step 2: Retrieve the authorized signer's public key ────────────
     // This key was stored by the contract creator during initialize().
     // If it was never set, the contract is in an invalid state and we
     // return a specific error rather than panicking on None unwrap.
     let authorized_signer =
         storage::get_authorized_signer(env).ok_or(Error::AuthorizedSignerNotSet)?;
 
-    // ── Step 2: Get the current contract's address ─────────────────────
+    // Step 3: Validate signer key format
+    validate_signer_key(&authorized_signer)?;
+
+    // ── Step 4: Get the current contract's address ─────────────────────
     // Used as a component in the signed message to bind the signature
     // to this specific contract instance (prevents cross-contract replay).
     let contract_id = env.current_contract_address();
 
-    // ── Step 3: Reconstruct the expected signed message ────────────────
+    // ── Step 5: Reconstruct the expected signed message ────────────────
     // The off-chain signer should have signed:
     //   SHA256(destination || nonce || contract_id)
     // using the current nonce at the time of signing.
     let message = construct_sweep_message(env, destination, &contract_id);
 
-    // ── Step 4: Ed25519 signature verification ─────────────────────────
+    // ── Step 6: Ed25519 signature verification ─────────────────────────
     // This performs constant-time cryptographic verification.
     // On failure it panics, which aborts the entire Soroban transaction.
     // We do NOT catch this panic — a failed signature check is a hard

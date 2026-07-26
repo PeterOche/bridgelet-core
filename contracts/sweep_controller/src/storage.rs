@@ -32,6 +32,8 @@ pub enum DataKey {
     PendingSigner,
     /// Ledger sequence at which the pending signer becomes effective
     PendingSignerEffectiveLedger,
+    /// Storage schema version for migrations
+    StorageVersion,
 }
 
 /// Set the authorized signer public key

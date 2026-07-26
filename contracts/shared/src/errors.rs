@@ -83,8 +83,8 @@ mod tests {
 
     #[test]
     fn shared_error_codes_do_not_collide_with_sweep_controller_errors() {
-        // sweep_controller::Error has codes 1–13 (with gap at 12).
-        let sweep_codes: std::vec::Vec<u32> = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13];
+        // sweep_controller::Error has codes 2000–2018.
+        let sweep_codes: std::vec::Vec<u32> = (2000..=2018).collect();
         let shared_codes = [
             SharedError::NotInitialized as u32,
             SharedError::AlreadyInitialized as u32,
