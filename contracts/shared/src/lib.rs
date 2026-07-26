@@ -1,12 +1,13 @@
 #![no_std]
 
-mod events;
-mod interfaces;
+pub mod errors;
+pub mod passphrase;
+pub mod storage_keys;
 mod types;
 
-pub use events::{
-    AccountCreated, AccountExpired, MultiPaymentReceived, PaymentReceived, ReserveReclaimed,
-    SweepExecutedMulti,
+pub use errors::SharedError;
+pub use storage_keys::StorageKey;
+pub use types::{
+    AccountInfo, AccountInitRequest, AccountInitResult, AccountStatus, AssetBalance,
+    ContractVersion, Payment, SweepPayload,
 };
-pub use interfaces::{EphemeralAccountInterface, SweepControllerInterface};
-pub use types::{AccountInfo, AccountInitRequest, AccountInitResult, AccountStatus, Payment};
