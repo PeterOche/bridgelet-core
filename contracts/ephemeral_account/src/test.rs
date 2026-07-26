@@ -10,7 +10,7 @@ mod test {
     };
     use soroban_sdk::{
         testutils::{Address as _, Events as _, Ledger as _},
-        Address, BytesN, Env, InvokeError, TryFromVal,
+        Address, BytesN, Env, IntoVal, InvokeError, TryFromVal,
     };
 
     const BASE_RESERVE_STROOPS: i128 = 1_000_000_000;
@@ -1004,37 +1004,6 @@ mod test {
     }
 
     #[test]
-    fn test_record_payment_below_min_rejected() {
-    #[test]
-    fn test_recovery_sweep_full_lifecycle() {
-        use crate::events::AccountExpired;
-        use soroban_sdk::symbol_short;
-
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register(EphemeralAccountContract, ());
-        let client = EphemeralAccountContractClient::new(&env, &contract_id);
-
-        let creator = Address::generate(&env);
-        let recovery = Address::generate(&env);
-        let controller = Address::generate(&env);
-        let asset = Address::generate(&env);
-        let expiry_ledger = env.ledger().sequence() + 1000;
-
-        client.initialize(
-            &creator,
-            &expiry_ledger,
-            &recovery,
-            &controller,
-            &Address::generate(&env),
-        );
-
-        let result = client.try_record_payment(&0, &asset);
-        assert!(matches!(result, Err(Ok(Error::InvalidAmount))));
-    }
-
-    #[test]
     fn test_record_payment_negative_rejected() {
         let env = Env::default();
         env.mock_all_auths();
@@ -1084,11 +1053,33 @@ mod test {
 
         let result = client.try_record_payment(&1, &asset);
         assert!(matches!(result, Ok(Ok(()))));
+    }
+
+    #[test]
+    fn test_recovery_sweep_full_lifecycle() {
+        use crate::events::AccountExpired;
+        use soroban_sdk::symbol_short;
+
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(EphemeralAccountContract, ());
+        let client = EphemeralAccountContractClient::new(&env, &contract_id);
+
+        let creator = Address::generate(&env);
+        let recovery = Address::generate(&env);
+        let expiry_ledger = env.ledger().sequence() + 1000;
+
+        client.initialize(
+            &creator,
+            &expiry_ledger,
+            &recovery,
             &Address::generate(&env),
             &Address::generate(&env),
         );
 
         let recorded_amount: i128 = 42_000_000;
+        let asset = Address::generate(&env);
         client.record_payment(&recorded_amount, &asset);
 
         assert_eq!(client.get_status(), AccountStatus::PaymentReceived);
@@ -1129,5 +1120,71 @@ mod test {
         assert_eq!(info_after.payments.get(0).unwrap().amount, recorded_amount);
         assert_eq!(client.get_reserve_remaining(), 0);
         assert!(client.is_reserve_reclaimed());
+    }
+
+    // ── Authorization tests (PR #375) ──────────────────────────────────────
+
+    #[test]
+    fn test_record_payment_rejects_unauthorized_caller() {
+        let env = Env::default();
+
+        let contract_id = env.register(EphemeralAccountContract, ());
+        let client = EphemeralAccountContractClient::new(&env, &contract_id);
+
+        let creator = Address::generate(&env);
+        let recovery = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let asset = Address::generate(&env);
+        let expiry_ledger = env.ledger().sequence() + 1000;
+
+        env.mock_all_auths();
+        client.initialize(
+            &creator,
+            &expiry_ledger,
+            &recovery,
+            &controller,
+            &Address::generate(&env),
+        );
+
+        // Now clear auths so the record_payment call from a non-controller has no auth
+        env.set_auths(&[]);
+        let result = client.try_record_payment(&100, &asset);
+        assert!(matches!(result, Err(_)));
+    }
+
+    #[test]
+    fn test_record_payment_accepts_authorized_controller() {
+        let env = Env::default();
+
+        let contract_id = env.register(EphemeralAccountContract, ());
+        let client = EphemeralAccountContractClient::new(&env, &contract_id);
+
+        let creator = Address::generate(&env);
+        let recovery = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let asset = Address::generate(&env);
+        let expiry_ledger = env.ledger().sequence() + 1000;
+
+        env.mock_all_auths();
+        client.initialize(
+            &creator,
+            &expiry_ledger,
+            &recovery,
+            &controller,
+            &Address::generate(&env),
+        );
+
+        // Mock only the controller's auth for record_payment
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &controller,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "record_payment",
+                args: (&100_i128, &asset).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let result = client.try_record_payment(&100, &asset);
+        assert!(matches!(result, Ok(Ok(()))));
     }
 }
