@@ -17,7 +17,7 @@ pub const STANDALONE_PASSPHRASE: &str = "Standalone Network ; February 2017";
 /// `env.ledger().network_id()`.
 fn hash_passphrase(env: &Env, passphrase: &str) -> soroban_sdk::BytesN<32> {
     let bytes = Bytes::from_slice(env, passphrase.as_bytes());
-    env.crypto().sha256(&bytes)
+    env.crypto().sha256(&bytes).into()
 }
 
 /// Verify that the current ledger's network passphrase matches one of the
