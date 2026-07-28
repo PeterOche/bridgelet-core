@@ -170,6 +170,7 @@ proptest! {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -199,6 +200,7 @@ proptest! {
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
             &Address::generate(&env),
         );
 
@@ -234,6 +236,7 @@ proptest! {
             &expiry_ledger,
             &recovery,
             &controller,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &admin,
         );
 
@@ -256,11 +259,13 @@ proptest! {
         let recovery = Address::generate(&env);
         let expiry_ledger = env.ledger().sequence() + 1000;
 
+        let signer = BytesN::from_array(&env, &[0u8; 32]);
         client.initialize(
             &creator,
             &expiry_ledger,
             &recovery,
             &Address::generate(&env),
+            &signer,
             &Address::generate(&env),
         );
 

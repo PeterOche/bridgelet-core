@@ -212,40 +212,9 @@ impl EphemeralAccountContract {
 
     /// Shared sweep logic: pre-condition checks, state transition, events, reserve reclaim.
     fn execute_sweep_core(env: &Env, destination: Address) -> Result<(), Error> {
-        if !storage::is_initialized(env) {
-    /// Sweep initiated by a direct claim — **no off-chain signature required**.
-    ///
-    /// This is the **Soroban-auth claim** path: authorization is enforced
-    /// entirely by requiring the sweep controller as the invoker via Soroban
-    /// auth. Used by `SweepController::claim()` where the recipient has already
-    /// proven ownership via the Soroban auth entry on the outer transaction.
-    ///
-    /// **Do not call directly** — always route through
-    /// `SweepController::claim`, which handles destination validation, nonce
-    /// management, and event emission.
-    ///
-    /// # Arguments
-    /// * `destination` - Recipient wallet address (must match locked destination if set)
-    ///
-    /// # Errors
-    /// * `Error::NotInitialized` — contract not yet initialized
-    /// * `Error::AlreadySwept` — account already swept
-    /// * `Error::NoPaymentReceived` — no payment recorded yet
-    /// * `Error::AccountExpired` — past expiry ledger
-    /// * `Error::Unauthorized` — caller is not the authorized controller
-    ///
-    /// # Authorization Flow
-    /// 1. Recipient signs a Soroban auth entry for `SweepController::claim`
-    /// 2. Caller (or relayer) invokes `SweepController::claim(recipient, ephemeral_account)`
-    /// 3. `SweepController` validates destination, authorizes as invoker of `sweep_claim`
-    /// 4. This function validates state, transitions to `Swept`, and reclaims reserve
-    ///
-    /// See also: [`sweep`] for the Ed25519 signature path used by
-    /// `SweepController::execute_sweep`.
-    pub fn sweep_claim(env: Env, destination: Address) -> Result<(), Error> {
-        storage::extend_instance_ttl(&env);
+        storage::extend_instance_ttl(env);
 
-        if !storage::is_initialized(&env) {
+        if !storage::is_initialized(env) {
             return Err(Error::NotInitialized);
         }
         if storage::get_status(env) == AccountStatus::Swept {
@@ -288,6 +257,11 @@ impl EphemeralAccountContract {
         let current_ledger = env.ledger().sequence();
 
         current_ledger >= expiry_ledger
+    }
+
+    /// Check if the account has been initialized.
+    pub fn is_initialized(env: Env) -> bool {
+        storage::is_initialized(&env)
     }
 
     /// Get current account status
@@ -704,5 +678,9 @@ impl EphemeralAccountInterface for EphemeralAccountContract {
 
     fn is_expired(env: Env) -> bool {
         Self::is_expired(env)
+    }
+
+    fn is_initialized(env: Env) -> bool {
+        Self::is_initialized(env)
     }
 }

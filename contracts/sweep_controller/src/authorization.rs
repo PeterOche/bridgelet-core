@@ -96,7 +96,7 @@ fn validate_signer_key(signer: &BytesN<32>) -> Result<(), Error> {
     // BytesN<32> is always 32 bytes by construction in Soroban, so this
     // is technically always true.  The check exists for documentation
     // purposes and as a safeguard against future type changes.
-    if signer.to_buffer().len() != ED25519_PUBLIC_KEY_LEN {
+    if signer.to_array().len() != ED25519_PUBLIC_KEY_LEN {
         return Err(Error::InvalidSignature);
     }
     Ok(())
@@ -104,7 +104,7 @@ fn validate_signer_key(signer: &BytesN<32>) -> Result<(), Error> {
 
 /// Validate that a signature has the correct length for Ed25519.
 fn validate_signature_length(signature: &BytesN<64>) -> Result<(), Error> {
-    if signature.to_buffer().len() != ED25519_SIGNATURE_LEN {
+    if signature.to_array().len() != ED25519_SIGNATURE_LEN {
         return Err(Error::InvalidSignature);
     }
     Ok(())

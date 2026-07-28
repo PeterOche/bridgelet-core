@@ -389,4 +389,7 @@ mod test {
             &recovery,
             &Address::generate(&env),
             &BytesN::from_array(&env, &[0u8; 32]),
-}
+            &Address::generate(&env),
+        );
+
+        assert!(result.is_err());

@@ -36,6 +36,9 @@ pub trait EphemeralAccountInterface {
 
     /// Whether the account has passed its expiry ledger.
     fn is_expired(env: Env) -> bool;
+
+    /// Whether the account has been initialized.
+    fn is_initialized(env: Env) -> bool;
 }
 
 /// Interface exposed by the sweep controller contract.

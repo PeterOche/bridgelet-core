@@ -130,11 +130,15 @@ impl AccountFactory {
                 &request.expiry_ledger,
                 &request.recovery_address,
                 &creator,
+                // Placeholder authorized_signer — batch_initialize does not
+                // verify off-chain signatures; the creator (admin) manages
+                // signer keys via the single-account interface.
+                &BytesN::from_array(&env, &[0u8; 32]),
                 // Admin is a deterministic placeholder address so `batch_initialize`
                 // doesn't depend on the `testutils` feature being enabled. The
                 // creator (passed as deployer auth above) is the actual admin in
                 // production deployments; this value is here only because the
-                // 5-arg `initialize` shape requires an admin slot on every call.
+                // 6-arg `initialize` shape requires an admin slot on every call.
                 &Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
