@@ -21,7 +21,8 @@ Before executing state-changing transactions, operators **must** verify the targ
 Using the Soroban CLI or contract read queries, inspect `is_expired()` and `get_status()`:
 
 ```bash
-# 1. Check if the current ledger sequence has passed the account's expiry ledger
+
+# 1. Check if the current ledger sequence has passed the account's expiry ledger from the checker
 soroban contract invoke \
   --id <EPHEMERAL_ACCOUNT_CONTRACT_ID> \
   --source-account <OPERATOR_KEYS> \
