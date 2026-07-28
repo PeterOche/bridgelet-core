@@ -8,37 +8,64 @@
 
 ## Overview
 
-Bridgelet Core provides two execution pathways for sweeping funds from an `EphemeralAccount` to a recipient address:
+Bridgelet Core's `EphemeralAccountContract` provides two entrypoints for executing a sweep:
 
-1. **Off-Chain Signed Sweep (`execute_sweep` / `EphemeralAccount::sweep`)**
-2. **Gas-Free Direct Claim (`claim` / `EphemeralAccount::sweep_claim`)**
+1. **`sweep()`**: The off-chain-signed flow, invoked exclusively by `SweepController::execute_sweep()`
+2. **`sweep_claim()`**: The native-auth claim flow, invoked exclusively by `SweepController::claim()`
 
----
-
-## Direct Comparison Matrix
-
-| Feature / Property | `execute_sweep` (`sweep`) | `claim` (`sweep_claim`) |
-| :--- | :--- | :--- |
-| **Authentication Scheme** | Ed25519 signature verified in `SweepController` | Soroban native `require_auth()` signed by recipient |
-| **Relayer / Fee Payment** | Relayer submits tx with Ed25519 signature payload | Relayer submits tx; recipient signs Soroban auth entry |
-| **Mempool Parameter Locking** | `destination` locked cryptographically inside signature | Parameter passed explicitly; subject to frontrunning in flexible mode |
-| **Sweep Nonce Update** | Increments `SweepController` nonce on success | Does **not** increment `SweepController` nonce |
-| **Destination Lock Constraint** | Checks `authorized_destination` if set | Checks `authorized_destination` if set |
-| **Account State Machine** | Transitions `Active`/`PaymentReceived` $\rightarrow$ `Swept` | Transitions `Active`/`PaymentReceived` $\rightarrow$ `Swept` |
+Both entrypoints ultimately produce identical state transitions and reserve-reclaim behavior.
 
 ---
 
-## Detailed Execution Patterns
+## Precondition Check Comparison
 
-### 1. `execute_sweep` Pathway
-- Off-chain system signs `SHA256(destination || nonce || controller_id)`.
-- Invokes `SweepController::execute_sweep(ephemeral_account, destination, auth_signature)`.
-- `SweepController` verifies signature, increments sweep nonce, authorizes downstream invocation, and calls `EphemeralAccount::sweep()`.
-- `EphemeralAccount` marks state as `Swept`, reclaims reserve, and `SweepController` executes token transfers.
+The table below lists all precondition checks performed by each entrypoint before allowing a sweep to execute. Most checks are shared, but they differ in their authorization mechanisms and input requirements.
 
-### 2. `claim` Pathway
-- Recipient signs Soroban authorization entry for `SweepController::claim(recipient, ephemeral_account)`.
-- Relayer submits transaction and pays gas fees.
-- `SweepController` verifies `recipient.require_auth()` and checks `validate_destination()`.
-- `SweepController` invokes `EphemeralAccount::sweep_claim(recipient)` via invoker contract authorization context.
-- `EphemeralAccount` marks state as `Swept`, reclaims reserve, and `SweepController` executes token transfers.
+| Precondition Check | `EphemeralAccount::sweep()` (off-chain flow) | `EphemeralAccount::sweep_claim()` (native-auth flow) |
+| :--- | :---: | :---: |
+| Contract must be initialized | ✅ | ✅ |
+| Account status must not already be `Swept` | ✅ | ✅ |
+| Account must have received at least one payment (`has_payment_received()`) | ✅ | ✅ |
+| Account must not be expired (`!is_expired()`) | ✅ | ✅ |
+| Caller must be the `authorized_controller` | ✅ | ✅ |
+| Ed25519 signature verification (of `auth_signature`) | ✅ | ❌ (not required) |
+| Requires `auth_signature` input parameter | ✅ | ❌ |
+
+### Key Differences in Preconditions
+- **Authorization method**: The `sweep()` entrypoint verifies an Ed25519 signature passed as `auth_signature`, while `sweep_claim()` relies on Soroban's native `require_auth()` enforced by the `SweepController`
+- **Input requirements**: `sweep()` requires an additional `auth_signature` parameter that `sweep_claim()` does not need
+- **Controller verification**: Both ensure the caller is the authorized controller, but `sweep_claim()` enforces this via `controller.require_auth()` immediately upon entry
+
+---
+
+## Intended Callers & Execution Flows
+
+### 1. Off-Chain-Signed Flow (`sweep()` invoked by `SweepController::execute_sweep()`)
+**Intended caller**: Only `SweepController::execute_sweep()` — this entrypoint should never be called directly.
+- The off-chain Bridgelet signer produces an Ed25519 signature over `hash(destination || nonce || controller_id)`
+- A relayer submits a transaction invoking `SweepController::execute_sweep(ephemeral_account, destination, auth_signature)`
+- `SweepController` verifies the Ed25519 signature, increments its internal sweep nonce, and authorizes the cross-contract call
+- `SweepController` calls `EphemeralAccount::sweep()`, which performs its own precondition checks including re-verifying the signature
+- The account transitions to `Swept`, reserve is reclaimed, and tokens are transferred to the destination
+
+### 2. Native-Auth Claim Flow (`sweep_claim()` invoked by `SweepController::claim()`)
+**Intended caller**: Only `SweepController::claim()` — this entrypoint should never be called directly.
+- The recipient signs a Soroban native authorization entry for `SweepController::claim(recipient, ephemeral_account)`
+- A relayer submits the transaction and pays all gas fees
+- `SweepController` first verifies `recipient.require_auth()` to confirm the recipient has authorized the claim
+- `SweepController` validates the destination against any `authorized_destination` restrictions
+- `SweepController` calls `EphemeralAccount::sweep_claim(recipient)`, which verifies the caller is the authorized controller
+- The account transitions to `Swept`, reserve is reclaimed, and tokens are transferred to the recipient
+
+---
+
+## Shared Outcome (Identical State & Reserve Behavior)
+
+Despite their different authorization flows and precondition check ordering, both entrypoints ultimately execute identical final logic:
+1. Set account status to `AccountStatus::Swept`
+2. Record the destination address the account was swept to
+3. Generate a sweep ID from the current ledger sequence
+4. Emit the `SweepExecutedMulti` event with all payments
+5. Reclaim the account's reserve balance to the destination via `reclaim_reserve_to()`
+
+Both flows result in the same final state for the ephemeral account and identical reserve-reclaim semantics.
