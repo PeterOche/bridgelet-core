@@ -1,8 +1,8 @@
 use crate::types::Payment;
 use soroban_sdk::{contracttype, Address, Vec};
 
-/// Issue #40: contract event definitions live in the shared crate so the SDK
-/// and every contract reference identical event schemas.
+// Issue #40: contract event definitions live in the shared crate so the SDK
+// and every contract reference identical event schemas.
 
 /// Emitted when an ephemeral account is created.
 #[contracttype]

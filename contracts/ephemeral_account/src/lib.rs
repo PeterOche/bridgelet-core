@@ -3,7 +3,6 @@
 mod errors;
 mod events;
 mod storage;
-#[cfg(test)]
 mod test;
 
 use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, BytesN, Env, Vec};

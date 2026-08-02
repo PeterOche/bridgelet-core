@@ -4,14 +4,13 @@ mod authorization;
 mod errors;
 mod migration;
 mod storage;
-mod transfers;
-#[cfg(test)]
 mod test;
+mod transfers;
 
 use ephemeral_account::EphemeralAccountContractClient as EphemeralAccountClient;
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, IntoVal, Symbol, Vec,
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, IntoVal, Vec,
 };
 
 use authorization::AuthContext;
@@ -145,6 +144,17 @@ impl SweepController {
 
         let account_client = EphemeralAccountClient::new(&env, &ephemeral_account);
         let info = account_client.get_info();
+
+        let mut payments_vec = Vec::new(&env);
+        for payment in info.payments.iter() {
+            payments_vec.push_back(Payment {
+                asset: payment.asset.clone(),
+                amount: payment.amount,
+                timestamp: payment.timestamp,
+            });
+        }
+        emit_sweep_executed_multi(&env, recipient.clone(), payments_vec);
+
         let amount = info.payments.iter().map(|p| p.amount).sum();
         emit_sweep_completed(&env, ephemeral_account, recipient, amount);
 
@@ -228,7 +238,7 @@ impl SweepController {
             });
         }
 
-        transfers::execute_transfers(env, &ephemeral_account, &destination, &payments_vec);
+        transfers::execute_transfers(env, &ephemeral_account, &destination, &payments_vec)?;
 
         // Emit the per-asset breakdown, then the summed completion event.
         emit_sweep_executed_multi(env, destination.clone(), payments_vec);
@@ -242,12 +252,32 @@ impl SweepController {
         ephemeral_account: &Address,
         recipient: &Address,
     ) -> Result<(), Error> {
-        let auth_signature = BytesN::from_array(env, &[0; 64]);
-        Self::authorize_ephemeral_sweep(env, ephemeral_account, recipient, &auth_signature);
+        Self::authorize_ephemeral_sweep_claim(env, ephemeral_account, recipient);
 
         let account_client = EphemeralAccountClient::new(env, ephemeral_account);
-        account_client.sweep(recipient, &auth_signature);
+        account_client.sweep_claim(recipient);
         Ok(())
+    }
+
+    fn authorize_ephemeral_sweep_claim(
+        env: &Env,
+        ephemeral_account: &Address,
+        recipient: &Address,
+    ) {
+        let args = (recipient.clone(),).into_val(env);
+        let context = ContractContext {
+            contract: ephemeral_account.clone(),
+            fn_name: soroban_sdk::Symbol::new(env, "sweep_claim"),
+            args,
+        };
+        let auth_entries = Vec::from_array(
+            env,
+            [InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context,
+                sub_invocations: Vec::new(env),
+            })],
+        );
+        env.authorize_as_current_contract(auth_entries);
     }
     /// Check if an account is ready for sweep
     pub fn can_sweep(env: Env, ephemeral_account: Address) -> bool {
@@ -257,8 +287,7 @@ impl SweepController {
 
         let info = account_client.get_info();
 
-        info.status as u32 == AccountStatus::PaymentReceived as u32
-            && !account_client.is_expired()
+        info.status as u32 == AccountStatus::PaymentReceived as u32 && !account_client.is_expired()
     }
 
     /// Return the current sweep nonce for this controller.
