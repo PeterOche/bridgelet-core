@@ -2,12 +2,20 @@
 
 extern crate std;
 
+use crate::{Error, SweepController, SweepControllerClient};
 use ephemeral_account::{AccountStatus, EphemeralAccountContract, EphemeralAccountContractClient};
 use soroban_sdk::{
-    testutils::{Address as _, Events},
-    Address, BytesN, Env,
+    testutils::{Address as _, Events, Ledger as _},
+    Address, BytesN, Env, Symbol, TryFromVal,
 };
-use sweep_controller::{Error, SweepController, SweepControllerClient};
+
+fn test_env() -> Env {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger()
+        .set_network_id(bridgelet_shared::passphrase::standalone_network_id(&env));
+    env
+}
 
 fn setup_controller_and_account(
     env: &Env,
@@ -42,7 +50,8 @@ fn setup_controller_and_account(
         &expiry,
         &recovery,
         &controller_id,
-        &account_creator,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &Address::generate(&env),
     );
 
     let asset = Address::generate(env);
@@ -50,12 +59,7 @@ fn setup_controller_and_account(
     ephemeral_client.record_payment(&500, &asset);
     env.set_auths(&[]);
 
-    (
-        controller_client,
-        ephemeral_client,
-        ephemeral_id,
-        creator,
-    )
+    (controller_client, ephemeral_client, ephemeral_id, creator)
 }
 
 // ── Issue #155: Verify SweepExecutedMulti event fields ──────────────────
@@ -64,8 +68,7 @@ fn setup_controller_and_account(
 /// (asset, amount) pairs, and the ledger sequence.
 #[test]
 fn test_sweep_executed_multi_event_includes_all_fields() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let ephemeral_id = env.register(EphemeralAccountContract, ());
     let ephemeral_client = EphemeralAccountContractClient::new(&env, &ephemeral_id);
@@ -84,27 +87,28 @@ fn test_sweep_executed_multi_event_includes_all_fields() {
         &expiry,
         &recovery,
         &Address::generate(&env), // controller (not used for direct sweep)
+        &BytesN::from_array(&env, &[0u8; 32]),
         &Address::generate(&env),
     );
 
     ephemeral_client.record_payment(&100, &asset1);
     ephemeral_client.record_payment(&200, &asset2);
 
-    let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
     env.mock_all_auths();
-    ephemeral_client.sweep(&destination, &auth_sig);
+    ephemeral_client.sweep_claim(&destination);
 
     // Verify the events were emitted with correct structure
     let events = env.events();
     let all_events: std::vec::Vec<_> = events.all().iter().collect();
 
     // Find the SweepExecutedMulti event (topic: "swept_mul")
-    let sweep_event = all_events
+    all_events
         .iter()
         .find(|e| {
-            let topic = &e.0;
-            // Check if the topic symbol matches "swept_mul"
-            soroban_sdk::symbol_short!("swept_mul") == *topic
+            // The first topic element is the symbol; e.0 is the emitter address.
+            e.1.first()
+                .and_then(|v| Symbol::try_from_val(&env, &v).ok())
+                == Some(soroban_sdk::symbol_short!("swept_mul"))
         })
         .expect("SweepExecutedMulti event not found");
 
@@ -120,8 +124,7 @@ fn test_sweep_executed_multi_event_includes_all_fields() {
 /// Verify SweepExecutedMulti event is emitted with correct payment data
 #[test]
 fn test_sweep_event_records_payment_amounts() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let ephemeral_id = env.register(EphemeralAccountContract, ());
     let client = EphemeralAccountContractClient::new(&env, &ephemeral_id);
@@ -137,12 +140,12 @@ fn test_sweep_event_records_payment_amounts() {
         &expiry,
         &recovery,
         &Address::generate(&env),
+        &BytesN::from_array(&env, &[0u8; 32]),
         &Address::generate(&env),
     );
     client.record_payment(&777, &asset);
 
-    let auth_sig = BytesN::from_array(&env, &[0u8; 64]);
-    client.sweep(&destination, &auth_sig);
+    client.sweep_claim(&destination);
 
     let info = client.get_info();
     assert_eq!(info.payments.len(), 1);
@@ -157,8 +160,7 @@ fn test_sweep_event_records_payment_amounts() {
 /// would serve as the upgrade authority (same pattern as EphemeralAccount).
 #[test]
 fn test_sweep_controller_creator_is_stored() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let controller_id = env.register(SweepController, ());
     let client = SweepControllerClient::new(&env, &controller_id);
@@ -176,8 +178,7 @@ fn test_sweep_controller_creator_is_stored() {
 /// Test successful sweep via execute_sweep (with mocked auth)
 #[test]
 fn test_execute_sweep_unauthorized_signer_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let (controller_client, _ephemeral_client, ephemeral_id, _creator) =
         setup_controller_and_account(&env);
@@ -194,8 +195,7 @@ fn test_execute_sweep_unauthorized_signer_fails() {
 /// Test that sweep of account with no payment fails
 #[test]
 fn test_sweep_account_not_ready_without_payment() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let controller_id = env.register(SweepController, ());
     let controller_client = SweepControllerClient::new(&env, &controller_id);
@@ -215,7 +215,8 @@ fn test_sweep_account_not_ready_without_payment() {
         &expiry,
         &recovery,
         &controller_id,
-        &account_creator,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &Address::generate(&env),
     );
     // No record_payment called
 
@@ -231,8 +232,7 @@ fn test_sweep_account_not_ready_without_payment() {
 /// Test can_sweep returns true when account has payment and is not expired
 #[test]
 fn test_can_sweep_returns_true_for_ready_account() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let (_controller_client, _ephemeral_client, ephemeral_id, _creator) =
         setup_controller_and_account(&env);
@@ -240,11 +240,10 @@ fn test_can_sweep_returns_true_for_ready_account() {
     assert!(_controller_client.can_sweep(&ephemeral_id));
 }
 
-/// Test can_sweep returns false for uninitialized account
+/// Test can_sweep returns false when no payment has been recorded
 #[test]
-fn test_can_sweep_returns_false_for_uninitialized() {
-    let env = Env::default();
-    env.mock_all_auths();
+fn test_can_sweep_returns_false_without_payment() {
+    let env = test_env();
 
     let controller_id = env.register(SweepController, ());
     let controller_client = SweepControllerClient::new(&env, &controller_id);
@@ -252,15 +251,27 @@ fn test_can_sweep_returns_false_for_uninitialized() {
     let signer_pub = BytesN::from_array(&env, &[1u8; 32]);
     controller_client.initialize(&creator, &signer_pub, &None);
 
-    let fake_account = Address::generate(&env);
-    assert!(!controller_client.can_sweep(&fake_account));
+    let ephemeral_id = env.register(EphemeralAccountContract, ());
+    let ephemeral_client = EphemeralAccountContractClient::new(&env, &ephemeral_id);
+    let account_creator = Address::generate(&env);
+    let recovery = Address::generate(&env);
+    let expiry = env.ledger().sequence() + 1000;
+    ephemeral_client.initialize(
+        &account_creator,
+        &expiry,
+        &recovery,
+        &controller_id,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &Address::generate(&env),
+    );
+    // No payment recorded — account is not sweepable yet
+    assert!(!controller_client.can_sweep(&ephemeral_id));
 }
 
 /// Test get_nonce returns initial value
 #[test]
 fn test_get_nonce_initial() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let controller_id = env.register(SweepController, ());
     let client = SweepControllerClient::new(&env, &controller_id);
@@ -275,7 +286,7 @@ fn test_get_nonce_initial() {
 /// Test claim requires recipient auth
 #[test]
 fn test_claim_rejects_unauthorized_recipient() {
-    let env = Env::default();
+    let env = test_env();
 
     let recipient = Address::generate(&env);
     let (controller_client, _ephemeral_client, ephemeral_id) = {
@@ -295,7 +306,8 @@ fn test_claim_rejects_unauthorized_recipient() {
             &expiry,
             &recovery,
             &controller_id,
-            &account_creator,
+            &BytesN::from_array(&env, &[0u8; 32]),
+            &Address::generate(&env),
         );
         let asset = Address::generate(&env);
         env.mock_all_auths_allowing_non_root_auth();
@@ -316,8 +328,7 @@ fn test_claim_rejects_unauthorized_recipient() {
 /// invalid state, the entire operation reverts (no partial state changes).
 #[test]
 fn test_atomic_sweep_reverts_on_invalid_state() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = test_env();
 
     let controller_id = env.register(SweepController, ());
     let controller_client = SweepControllerClient::new(&env, &controller_id);
@@ -335,7 +346,8 @@ fn test_atomic_sweep_reverts_on_invalid_state() {
         &expiry,
         &recovery,
         &controller_id,
-        &account_creator,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &Address::generate(&env),
     );
     // No payment recorded — sweep should fail atomically
 
@@ -354,22 +366,22 @@ fn test_atomic_sweep_reverts_on_invalid_state() {
 
 #[test]
 fn test_error_variant_codes() {
-    assert_eq!(Error::InvalidAccount as u32, 1);
-    assert_eq!(Error::TransferFailed as u32, 2);
-    assert_eq!(Error::AuthorizationFailed as u32, 3);
-    assert_eq!(Error::InsufficientBalance as u32, 4);
-    assert_eq!(Error::AccountNotReady as u32, 5);
-    assert_eq!(Error::AccountExpired as u32, 6);
-    assert_eq!(Error::AccountAlreadySwept as u32, 7);
-    assert_eq!(Error::InvalidSignature as u32, 8);
-    assert_eq!(Error::SignatureVerificationFailed as u32, 9);
-    assert_eq!(Error::AuthorizedSignerNotSet as u32, 10);
-    assert_eq!(Error::InvalidNonce as u32, 11);
-    assert_eq!(Error::UnauthorizedDestination as u32, 13);
-    assert_eq!(Error::NotAdmin as u32, 14);
-    assert_eq!(Error::Overflow as u32, 15);
-    assert_eq!(Error::InvalidEstimateInput as u32, 16);
-    assert_eq!(Error::TimeLockNotElapsed as u32, 17);
-    assert_eq!(Error::NoPendingSignerUpdate as u32, 18);
-    assert_eq!(Error::NotInitialized as u32, 19);
+    assert_eq!(Error::InvalidAccount as u32, 2000);
+    assert_eq!(Error::TransferFailed as u32, 2001);
+    assert_eq!(Error::AuthorizationFailed as u32, 2002);
+    assert_eq!(Error::InsufficientBalance as u32, 2003);
+    assert_eq!(Error::AccountNotReady as u32, 2004);
+    assert_eq!(Error::AccountExpired as u32, 2005);
+    assert_eq!(Error::AccountAlreadySwept as u32, 2006);
+    assert_eq!(Error::InvalidSignature as u32, 2007);
+    assert_eq!(Error::SignatureVerificationFailed as u32, 2008);
+    assert_eq!(Error::AuthorizedSignerNotSet as u32, 2009);
+    assert_eq!(Error::InvalidNonce as u32, 2010);
+    assert_eq!(Error::UnauthorizedDestination as u32, 2012);
+    assert_eq!(Error::NotAdmin as u32, 2013);
+    assert_eq!(Error::Overflow as u32, 2014);
+    assert_eq!(Error::InvalidEstimateInput as u32, 2015);
+    assert_eq!(Error::TimeLockNotElapsed as u32, 2016);
+    assert_eq!(Error::NoPendingSignerUpdate as u32, 2017);
+    assert_eq!(Error::NotInitialized as u32, 2018);
 }

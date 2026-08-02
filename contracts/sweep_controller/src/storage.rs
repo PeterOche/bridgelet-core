@@ -185,9 +185,7 @@ pub fn get_pending_signer_effective_ledger(env: &Env) -> Option<u32> {
 
 /// Clear pending signer state (call after applying the new signer)
 pub fn clear_pending_signer(env: &Env) {
-    env.storage()
-        .instance()
-        .remove(&DataKey::PendingSigner);
+    env.storage().instance().remove(&DataKey::PendingSigner);
     env.storage()
         .instance()
         .remove(&DataKey::PendingSignerEffectiveLedger);

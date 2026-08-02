@@ -9,6 +9,13 @@ use soroban_sdk::{
 };
 use sweep_controller::{SweepController, SweepControllerClient};
 
+fn test_env() -> Env {
+    let env = Env::default();
+    env.ledger()
+        .set_network_id(bridgelet_shared::passphrase::standalone_network_id(&env));
+    env
+}
+
 fn generate_test_keypair(env: &Env) -> (BytesN<32>, BytesN<64>) {
     let public_key = BytesN::from_array(
         env,
@@ -93,7 +100,7 @@ fn setup_ready_account(
 /// Test that re-initialization is prevented
 #[test]
 fn test_initialize_prevents_double_init() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let _creator = Address::generate(&env);
@@ -116,7 +123,7 @@ fn test_initialize_prevents_double_init() {
 /// Test that valid signatures are accepted
 #[test]
 fn test_execute_sweep_with_valid_signature() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let _creator = Address::generate(&env);
@@ -140,7 +147,14 @@ fn test_execute_sweep_with_valid_signature() {
     let expiry = env.ledger().sequence() + 1000;
 
     // Initialize ephemeral account, authorizing this SweepController to call sweep()
-    ephemeral_client.initialize(&creator, &expiry, &recovery, &controller_id, &BytesN::from_array(&env, &[0u8; 32]), &creator);
+    ephemeral_client.initialize(
+        &creator,
+        &expiry,
+        &recovery,
+        &controller_id,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &creator,
+    );
 
     // Create an invalid signature (all zeros - different from valid signature)
     let invalid_sig = BytesN::from_array(&env, &[0u8; 64]);
@@ -161,7 +175,7 @@ fn test_execute_sweep_with_valid_signature() {
 #[test]
 #[should_panic]
 fn test_sweep_without_payment() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let ephemeral_id = env.register(EphemeralAccountContract, ());
@@ -192,7 +206,7 @@ fn test_sweep_without_payment() {
 #[test]
 #[ignore = "TODO(unignore-as-followup): SweepController::claim -> authorize_claim -> sub-invoke auth chain broken on this branch; restore once Soroban auth-tree mock covers nested InvokerContractAuthEntry"]
 fn test_claim_succeeds_with_recipient_auth_and_relayable_flow() {
-    let env = Env::default();
+    let env = test_env();
 
     let recipient = Address::generate(&env);
     let (controller_client, ephemeral_client, ephemeral_id) =
@@ -218,7 +232,7 @@ fn test_claim_succeeds_with_recipient_auth_and_relayable_flow() {
 #[test]
 #[ignore = "TODO(unignore-as-followup): SweepController::claim -> authorize_claim -> sub-invoke auth chain broken on this branch; restore once Soroban auth-tree mock covers nested InvokerContractAuthEntry"]
 fn test_claim_records_recipient_authorization_context() {
-    let env = Env::default();
+    let env = test_env();
 
     let recipient = Address::generate(&env);
     let (controller_client, _, ephemeral_id) = setup_ready_account(&env, Some(recipient.clone()));
@@ -254,7 +268,7 @@ fn test_claim_records_recipient_authorization_context() {
 #[test]
 #[ignore = "TODO(unignore-as-followup): SweepController::claim -> authorize_claim -> sub-invoke auth chain broken on this branch; restore once Soroban auth-tree mock covers nested InvokerContractAuthEntry"]
 fn test_claim_rejects_wrong_recipient_for_locked_destination() {
-    let env = Env::default();
+    let env = test_env();
 
     let locked_destination = Address::generate(&env);
     let recipient = Address::generate(&env);
@@ -278,7 +292,7 @@ fn test_claim_rejects_wrong_recipient_for_locked_destination() {
 
 #[test]
 fn test_unauthorized_signer_not_set() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     // Deploy controller without initialization
@@ -297,7 +311,14 @@ fn test_unauthorized_signer_not_set() {
     let expiry = env.ledger().sequence() + 1000;
 
     // Initialize ephemeral account, authorizing this SweepController to call sweep()
-    ephemeral_client.initialize(&creator, &expiry, &recovery, &controller_id, &BytesN::from_array(&env, &[0u8; 32]), &creator);
+    ephemeral_client.initialize(
+        &creator,
+        &expiry,
+        &recovery,
+        &controller_id,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &creator,
+    );
 
     // Record payment
     ephemeral_client.record_payment(&100, &asset);
@@ -322,7 +343,7 @@ fn test_unauthorized_signer_not_set() {
 #[test]
 #[ignore = "TODO(unignore-as-followup): SweepController::claim -> authorize_claim -> sub-invoke auth chain broken on this branch; restore once Soroban auth-tree mock covers nested InvokerContractAuthEntry"]
 fn test_initialize_with_authorized_destination() {
-    let env = Env::default();
+    let env = test_env();
 
     let controller_id = env.register(SweepController, ());
     let controller_client = SweepControllerClient::new(&env, &controller_id);
@@ -398,7 +419,7 @@ fn test_initialize_with_authorized_destination() {
 
 #[test]
 fn test_second_sweep_rejected_after_successful_claim() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, _ephemeral_client, ephemeral_id) = setup_ready_account(&env, None);
 
@@ -490,6 +511,7 @@ fn setup_full_lifecycle(
                     &expiry,
                     &recovery,
                     &controller_id,
+                    &BytesN::from_array(&env, &[0u8; 32]),
                     &account_creator,
                 )
                     .into_val(env),
@@ -501,6 +523,7 @@ fn setup_full_lifecycle(
             &expiry,
             &recovery,
             &controller_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &account_creator,
         );
 
@@ -521,7 +544,7 @@ fn setup_full_lifecycle(
 /// Deploy â†’ init â†’ record â†’ claim â†’ verify full state including reserve.
 #[test]
 fn test_full_lifecycle_deploy_init_record_claim_verify_state() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, ephemeral_client, ephemeral_id, recipient, _asset) =
         setup_full_lifecycle(&env);
@@ -567,7 +590,7 @@ fn test_full_lifecycle_deploy_init_record_claim_verify_state() {
 /// Full lifecycle with multiple assets.
 #[test]
 fn test_full_lifecycle_multi_asset_claim() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, controller_id, ephemeral_client, ephemeral_id) = deploy_contracts(&env);
 
@@ -611,6 +634,7 @@ fn test_full_lifecycle_multi_asset_claim() {
                     &expiry,
                     &recovery,
                     &controller_id,
+                    &BytesN::from_array(&env, &[0u8; 32]),
                     &account_creator,
                 )
                     .into_val(&env),
@@ -622,6 +646,7 @@ fn test_full_lifecycle_multi_asset_claim() {
             &expiry,
             &recovery,
             &controller_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &account_creator,
         );
 
@@ -664,7 +689,7 @@ fn test_full_lifecycle_multi_asset_claim() {
 /// Expire flow: funds route to recovery_address.
 #[test]
 fn test_full_expire_flow_funds_to_recovery() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let (_, _, ephemeral_client, _) = deploy_contracts(&env);
@@ -678,6 +703,7 @@ fn test_full_expire_flow_funds_to_recovery() {
         &expiry,
         &recovery,
         &Address::generate(&env),
+        &BytesN::from_array(&env, &[0u8; 32]),
         &account_creator,
     );
 
@@ -698,7 +724,7 @@ fn test_full_expire_flow_funds_to_recovery() {
 /// Recover flow: creator triggers recovery after expiry.
 #[test]
 fn test_full_recover_flow_creator_after_expiry() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let (_, _, ephemeral_client, _) = deploy_contracts(&env);
@@ -712,6 +738,7 @@ fn test_full_recover_flow_creator_after_expiry() {
         &expiry,
         &recovery,
         &Address::generate(&env),
+        &BytesN::from_array(&env, &[0u8; 32]),
         &account_creator,
     );
 
@@ -730,7 +757,7 @@ fn test_full_recover_flow_creator_after_expiry() {
 /// Sweep rejected after expiry via claim.
 #[test]
 fn test_sweep_rejected_after_expiry_via_claim() {
-    let env = Env::default();
+    let env = test_env();
 
     let recipient = Address::generate(&env);
     let (controller_client, _ephemeral_client, ephemeral_id, _, _) = setup_full_lifecycle(&env);
@@ -745,7 +772,7 @@ fn test_sweep_rejected_after_expiry_via_claim() {
 /// Sweep rejected when no payment recorded.
 #[test]
 fn test_sweep_rejected_when_no_payment_recorded() {
-    let env = Env::default();
+    let env = test_env();
 
     let (_, controller_id, ephemeral_client, ephemeral_id) = deploy_contracts(&env);
 
@@ -790,6 +817,7 @@ fn test_sweep_rejected_when_no_payment_recorded() {
                     &expiry,
                     &recovery,
                     &controller_id,
+                    &BytesN::from_array(&env, &[0u8; 32]),
                     &account_creator,
                 )
                     .into_val(&env),
@@ -801,6 +829,7 @@ fn test_sweep_rejected_when_no_payment_recorded() {
             &expiry,
             &recovery,
             &controller_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &account_creator,
         );
 
@@ -811,7 +840,7 @@ fn test_sweep_rejected_when_no_payment_recorded() {
 /// Double claim rejected.
 #[test]
 fn test_double_claim_rejected() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, ephemeral_client, ephemeral_id, recipient, _) =
         setup_full_lifecycle(&env);
@@ -836,7 +865,7 @@ fn test_double_claim_rejected() {
 /// Locked destination rejects wrong address.
 #[test]
 fn test_locked_destination_rejects_wrong_address() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, _, _, _, _) = setup_full_lifecycle(&env);
 
@@ -850,7 +879,7 @@ fn test_locked_destination_rejects_wrong_address() {
 /// CanSweep returns correct values for different account states.
 #[test]
 fn test_can_sweep_reflects_account_state() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let (controller_client, controller_id, ephemeral_client, ephemeral_id) = deploy_contracts(&env);
@@ -868,6 +897,7 @@ fn test_can_sweep_reflects_account_state() {
         &expiry,
         &recovery,
         &controller_id,
+        &BytesN::from_array(&env, &[0u8; 32]),
         &account_creator,
     );
 
@@ -907,6 +937,7 @@ fn test_can_sweep_reflects_account_state() {
         &expiry2,
         &recovery2,
         &controller_id2,
+        &BytesN::from_array(&env, &[0u8; 32]),
         &account_creator2,
     );
     ephemeral_client2.record_payment(&100, &Address::generate(&env));
@@ -931,7 +962,7 @@ fn test_can_sweep_reflects_account_state() {
 /// SweepCompleted event emitted during claim.
 #[test]
 fn test_claim_emits_sweep_completed_event() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, _ephemeral_client, ephemeral_id, recipient, _asset) =
         setup_full_lifecycle(&env);
@@ -967,7 +998,7 @@ fn test_claim_emits_sweep_completed_event() {
 /// Nonce starts at 0 after initialization.
 #[test]
 fn test_nonce_starts_at_zero() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let (controller_client, _, _, _, _) = setup_full_lifecycle(&env);
@@ -978,7 +1009,7 @@ fn test_nonce_starts_at_zero() {
 /// Multiple ephemeral accounts can be managed by the same controller.
 #[test]
 fn test_single_controller_manages_multiple_accounts() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, controller_id, _, _) = deploy_contracts(&env);
 
@@ -1027,6 +1058,7 @@ fn test_single_controller_manages_multiple_accounts() {
                         &expiry,
                         &recovery,
                         &controller_id,
+                        &BytesN::from_array(&env, &[0u8; 32]),
                         &account_creator,
                     )
                         .into_val(&env),
@@ -1038,6 +1070,7 @@ fn test_single_controller_manages_multiple_accounts() {
                 &expiry,
                 &recovery,
                 &controller_id,
+                &BytesN::from_array(&env, &[0u8; 32]),
                 &account_creator,
             );
 
@@ -1073,7 +1106,7 @@ fn test_single_controller_manages_multiple_accounts() {
 /// Expire via recovery_address (not creator) after expiry.
 #[test]
 fn test_recovery_address_can_expire_account() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let (_, _, ephemeral_client, _) = deploy_contracts(&env);
@@ -1087,6 +1120,7 @@ fn test_recovery_address_can_expire_account() {
         &expiry,
         &recovery,
         &Address::generate(&env),
+        &BytesN::from_array(&env, &[0u8; 32]),
         &account_creator,
     );
 
@@ -1105,7 +1139,7 @@ fn test_recovery_address_can_expire_account() {
 /// get_info returns correct state at each lifecycle stage.
 #[test]
 fn test_get_info_reflects_lifecycle_stages() {
-    let env = Env::default();
+    let env = test_env();
     env.mock_all_auths();
 
     let (_, _, ephemeral_client, _) = deploy_contracts(&env);
@@ -1119,6 +1153,7 @@ fn test_get_info_reflects_lifecycle_stages() {
         &expiry,
         &recovery,
         &Address::generate(&env),
+        &BytesN::from_array(&env, &[0u8; 32]),
         &account_creator,
     );
 
@@ -1144,7 +1179,7 @@ fn test_get_info_reflects_lifecycle_stages() {
 /// Claim with flexible controller (no locked destination) succeeds for any recipient.
 #[test]
 fn test_claim_with_flexible_destination() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, controller_id, ephemeral_client, ephemeral_id) = deploy_contracts(&env);
 
@@ -1179,6 +1214,7 @@ fn test_claim_with_flexible_destination() {
                     &expiry,
                     &recovery,
                     &controller_id,
+                    &BytesN::from_array(&env, &[0u8; 32]),
                     &account_creator,
                 )
                     .into_val(&env),
@@ -1190,6 +1226,7 @@ fn test_claim_with_flexible_destination() {
             &expiry,
             &recovery,
             &controller_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &account_creator,
         );
 
@@ -1219,7 +1256,7 @@ fn test_claim_with_flexible_destination() {
 /// multi-asset claim, not just the summed SweepCompleted event.
 #[test]
 fn test_claim_emits_sweep_executed_multi_with_all_assets() {
-    let env = Env::default();
+    let env = test_env();
 
     let (controller_client, controller_id, ephemeral_client, ephemeral_id) = deploy_contracts(&env);
 
@@ -1263,6 +1300,7 @@ fn test_claim_emits_sweep_executed_multi_with_all_assets() {
                     &expiry,
                     &recovery,
                     &controller_id,
+                    &BytesN::from_array(&env, &[0u8; 32]),
                     &account_creator,
                 )
                     .into_val(&env),
@@ -1274,6 +1312,7 @@ fn test_claim_emits_sweep_executed_multi_with_all_assets() {
             &expiry,
             &recovery,
             &controller_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
             &account_creator,
         );
 
@@ -1318,4 +1357,3 @@ fn test_claim_emits_sweep_executed_multi_with_all_assets() {
         "SweepExecutedMulti event should be emitted with all payments"
     );
 }
-

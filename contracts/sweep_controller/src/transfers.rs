@@ -70,6 +70,7 @@ pub fn execute_transfers(
 ///
 /// Pure function — makes no on-chain calls.  Useful for SDK-level
 /// pre-sweep validation and fee estimation.
+#[cfg(test)]
 pub fn estimate_total(payments: &Vec<Payment>) -> Result<i128, Error> {
     let mut total: i128 = 0;
     for payment in payments.iter() {
@@ -86,12 +87,20 @@ pub fn estimate_total(payments: &Vec<Payment>) -> Result<i128, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_estimate_total_single_payment() {
         let env = Env::default();
         let asset = Address::generate(&env);
-        let payments = Vec::from_array(&env, [Payment { asset, amount: 100, timestamp: 0 }]);
+        let payments = Vec::from_array(
+            &env,
+            [Payment {
+                asset,
+                amount: 100,
+                timestamp: 0,
+            }],
+        );
         assert_eq!(estimate_total(&payments).unwrap(), 100);
     }
 
@@ -100,10 +109,21 @@ mod tests {
         let env = Env::default();
         let a1 = Address::generate(&env);
         let a2 = Address::generate(&env);
-        let payments = Vec::from_array(&env, [
-            Payment { asset: a1, amount: 100, timestamp: 0 },
-            Payment { asset: a2, amount: 200, timestamp: 0 },
-        ]);
+        let payments = Vec::from_array(
+            &env,
+            [
+                Payment {
+                    asset: a1,
+                    amount: 100,
+                    timestamp: 0,
+                },
+                Payment {
+                    asset: a2,
+                    amount: 200,
+                    timestamp: 0,
+                },
+            ],
+        );
         assert_eq!(estimate_total(&payments).unwrap(), 300);
     }
 
@@ -111,7 +131,14 @@ mod tests {
     fn test_estimate_total_rejects_zero_amount() {
         let env = Env::default();
         let asset = Address::generate(&env);
-        let payments = Vec::from_array(&env, [Payment { asset, amount: 0, timestamp: 0 }]);
+        let payments = Vec::from_array(
+            &env,
+            [Payment {
+                asset,
+                amount: 0,
+                timestamp: 0,
+            }],
+        );
         assert!(estimate_total(&payments).is_err());
     }
 
@@ -119,7 +146,14 @@ mod tests {
     fn test_estimate_total_rejects_negative_amount() {
         let env = Env::default();
         let asset = Address::generate(&env);
-        let payments = Vec::from_array(&env, [Payment { asset, amount: -1, timestamp: 0 }]);
+        let payments = Vec::from_array(
+            &env,
+            [Payment {
+                asset,
+                amount: -1,
+                timestamp: 0,
+            }],
+        );
         assert!(estimate_total(&payments).is_err());
     }
 }

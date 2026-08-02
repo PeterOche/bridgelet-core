@@ -1,8 +1,8 @@
 use soroban_sdk::{Bytes, Env};
 
-/// well-known network passphrase constants (32-byte SHA-256 hashes are
-/// stored on-chain as `Bytes<32>`; the human-readable strings are what
-/// wallets sign against — we hash them here for comparison).
+// Well-known network passphrase constants (32-byte SHA-256 hashes are
+// stored on-chain as `Bytes<32>`; the human-readable strings are what
+// wallets sign against — we hash them here for comparison).
 
 /// Stellar Public Network passphrase
 pub const PUBLIC_NETWORK_PASSPHRASE: &str = "Public Global Stellar Network ; September 2015";
@@ -38,9 +38,20 @@ pub fn require_network(env: &Env, expected_passphrase: &str) -> Result<(), sorob
     }
 }
 
+/// Return the 32-byte ledger network id for the standalone passphrase.
+///
+/// `Env::default()` in the Soroban test host initializes the ledger with an
+/// all-zero network id rather than the standalone passphrase, so tests that
+/// exercise `require_network` (which `initialize` enforces) must set the
+/// ledger network id via `env.ledger().set_network_id(...)` before calling.
+pub fn standalone_network_id(env: &Env) -> [u8; 32] {
+    hash_passphrase(env, STANDALONE_PASSPHRASE).to_array()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Ledger as _;
 
     #[test]
     fn test_hash_passphrase_deterministic() {
@@ -59,9 +70,11 @@ mod tests {
     }
 
     #[test]
-    fn test_require_network_passes_in_default_env() {
-        // Env::default() uses the standalone passphrase.
+    fn test_require_network_passes_with_standalone_network_id() {
+        // Env::default() starts with an all-zero network id, so tests must
+        // opt in to the standalone passphrase before require_network passes.
         let env = Env::default();
+        env.ledger().set_network_id(standalone_network_id(&env));
         assert!(require_network(&env, STANDALONE_PASSPHRASE).is_ok());
     }
 

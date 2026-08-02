@@ -1,6 +1,4 @@
-use soroban_sdk::{contracttype, BytesN, Env};
-
-use crate::storage;
+use soroban_sdk::{contracttype, Env};
 
 /// Storage schema version.  Stored on-chain under `StorageKey::StorageVersion`.
 /// Bump this whenever the storage layout changes in a backwards-incompatible
@@ -40,7 +38,9 @@ pub const CURRENT_VERSION: StorageVersion = StorageVersion {
 /// Read the stored schema version from instance storage.
 /// Returns `None` if no version has been stored yet (pre-migration contract).
 pub fn get_storage_version(env: &Env) -> Option<StorageVersion> {
-    env.storage().instance().get(&crate::storage::DataKey::StorageVersion)
+    env.storage()
+        .instance()
+        .get(&crate::storage::DataKey::StorageVersion)
 }
 
 /// Write the schema version to instance storage.
@@ -104,7 +104,8 @@ mod tests {
     #[test]
     fn get_version_returns_none_before_migration() {
         let env = Env::default();
-        let v = get_storage_version(&env);
+        let contract_id = env.register(crate::SweepController, ());
+        let v = env.as_contract(&contract_id, || get_storage_version(&env));
         assert!(v.is_none());
     }
 }

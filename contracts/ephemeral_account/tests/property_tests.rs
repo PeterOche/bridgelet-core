@@ -27,6 +27,16 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
+/// Build a test `Env` with mock auth enabled and the standalone network
+/// passphrase, matching what `initialize` enforces via `require_network`.
+fn test_env() -> Env {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger()
+        .set_network_id(bridgelet_shared::passphrase::standalone_network_id(&env));
+    env
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 48, failure_persistence: None, ..ProptestConfig::default() })]
 
@@ -36,8 +46,7 @@ proptest! {
     fn amount_never_negative_after_sweep(
         amounts in prop::collection::vec(1i128..=1_000_000_000_000i128, 1..=10)
     ) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
@@ -77,8 +86,7 @@ proptest! {
         past in 0u32..=50u32,
         amount in 1i128..=1_000_000_000_000i128,
     ) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
@@ -116,8 +124,7 @@ proptest! {
     // with Error::AlreadyInitialized, for any valid future expiry.
     #[test]
     fn double_initialize_always_fails(offset in 1u32..=1_000_000u32) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
@@ -153,8 +160,7 @@ proptest! {
     fn past_expiry_always_rejects_init(
         past_offset in 0u32..=1_000_000u32,
     ) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
@@ -185,8 +191,7 @@ proptest! {
     // (first call), regardless of the specific future ledger number.
     #[test]
     fn future_expiry_always_succeeds(offset in 1u32..=1_000_000u32) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
@@ -217,8 +222,7 @@ proptest! {
     fn random_addresses_do_not_panic(
         offset in 1u32..=10_000u32,
     ) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
@@ -249,8 +253,7 @@ proptest! {
     fn record_payment_various_amounts(
         amounts in prop::collection::vec(1i128..=i128::MAX, 1..=5),
     ) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = test_env();
 
         let contract_id = env.register(EphemeralAccountContract, ());
         let client = EphemeralAccountContractClient::new(&env, &contract_id);
