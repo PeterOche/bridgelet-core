@@ -6,6 +6,7 @@ members = [
     "contracts/shared",
     "contracts/reserve_contract",
     "contracts/account_factory",
+    "contracts/recovery_registry",
 ]
 
 [profile.release]
