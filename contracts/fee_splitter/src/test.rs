@@ -5,13 +5,15 @@ mod test {
     use crate::{FeeSplitter, FeeSplitterClient};
     use soroban_sdk::{
         testutils::{Address as _, Ledger},
-        token,
-        Address, Env, Vec,
+        token, Address, Env, Vec,
     };
 
     // ── Token test helpers ────────────────────────────────────────────────────
 
-    fn create_token<'a>(env: &'a Env, admin: &'a Address) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
+    fn create_token<'a>(
+        env: &'a Env,
+        admin: &'a Address,
+    ) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
         let contract_address = env.register_stellar_asset_contract_v2(admin.clone());
         let client = token::Client::new(env, &contract_address.address());
         let admin_client = token::StellarAssetClient::new(env, &contract_address.address());
@@ -135,8 +137,7 @@ mod test {
 
     #[test]
     fn test_2_payee_equal_split() {
-        let (env, client, sender, payee_a, payee_b, asset, _) =
-            setup_2_payee(5_000, 5_000);
+        let (env, client, sender, payee_a, payee_b, asset, _) = setup_2_payee(5_000, 5_000);
 
         client.split(&sender, &asset, &1_000i128);
 
@@ -148,8 +149,7 @@ mod test {
 
     #[test]
     fn test_2_payee_70_30_split() {
-        let (env, client, sender, payee_a, payee_b, asset, _) =
-            setup_2_payee(7_000, 3_000);
+        let (env, client, sender, payee_a, payee_b, asset, _) = setup_2_payee(7_000, 3_000);
 
         client.split(&sender, &asset, &1_000i128);
 
@@ -163,9 +163,9 @@ mod test {
     fn setup_5_payee() -> (
         Env,
         FeeSplitterClient<'static>,
-        Address,               // sender
-        std::vec::Vec<Address>,// payees
-        Address,               // asset
+        Address,                // sender
+        std::vec::Vec<Address>, // payees
+        Address,                // asset
     ) {
         let env = create_env();
         env.mock_all_auths();
