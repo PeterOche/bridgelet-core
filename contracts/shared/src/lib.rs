@@ -1,5 +1,26 @@
 #![no_std]
 
+pub mod errors;
+pub mod passphrase;
+pub mod storage_keys;
 mod types;
 
-pub use types::{AccountInfo, AccountInitRequest, AccountInitResult, AccountStatus, Payment};
+#[cfg(test)]
+pub mod test_utils;
+
+mod events;
+pub mod interfaces;
+
+pub use events::{
+    AccountCreated, AccountExpired, MultiPaymentReceived, PaymentReceived, ReserveReclaimed,
+    SweepExecutedMulti,
+};
+
+pub use interfaces::{EphemeralAccountInterface, SweepControllerInterface};
+
+pub use errors::SharedError;
+pub use storage_keys::StorageKey;
+pub use types::{
+    AccountInfo, AccountInitRequest, AccountInitResult, AccountStatus, AssetBalance,
+    ContractVersion, Payment, SweepPayload,
+};

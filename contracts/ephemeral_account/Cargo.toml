@@ -7,10 +7,12 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = "22.0.0"
+soroban-sdk = { workspace = true }
 bridgelet-shared = { path = "../shared", version = "0.1.0" }
 
 
 [dev-dependencies]
 soroban-sdk = { version = "22.0.0", features = ["testutils"] }
-proptest = "1"
+# Pin to the version Cargo.lock already records for the workspace (`1.11.0`).
+# Required by `contracts/ephemeral_account/tests/property_tests.rs`
+proptest = "1.11"

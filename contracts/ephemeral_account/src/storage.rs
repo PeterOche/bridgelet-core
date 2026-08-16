@@ -1,5 +1,4 @@
-use crate::events::ReserveReclaimed;
-use bridgelet_shared::{AccountStatus, Payment};
+use bridgelet_shared::{AccountStatus, Payment, ReserveReclaimed};
 use soroban_sdk::{contracttype, Address, Env, Map};
 
 #[contracttype]
@@ -18,6 +17,7 @@ pub enum DataKey {
     ReserveEventCount,
     LastReserveEvent,
     AuthorizedController,
+    AuthorizedSigner,
     Admin,
 }
 
@@ -225,4 +225,26 @@ pub fn set_admin(env: &Env, admin: &Address) {
 
 pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Admin)
+}
+
+// TTL management
+
+const INSTANCE_TTL_THRESHOLD: u32 = 100;
+const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
+
+pub fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+}
+
+// Authorized signer (Ed25519 public key for sweep signature verification)
+pub fn set_authorized_signer(env: &Env, signer: &soroban_sdk::BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::AuthorizedSigner, signer);
+}
+
+pub fn get_authorized_signer(env: &Env) -> Option<soroban_sdk::BytesN<32>> {
+    env.storage().instance().get(&DataKey::AuthorizedSigner)
 }

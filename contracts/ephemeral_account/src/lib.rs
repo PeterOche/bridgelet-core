@@ -3,18 +3,20 @@
 mod errors;
 mod events;
 mod storage;
-#[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
+use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, BytesN, Env, Vec};
 
-pub use bridgelet_shared::{AccountInfo, AccountStatus, Payment};
-pub use errors::Error;
-pub use events::{
-    AccountCreated, AccountExpired, MultiPaymentReceived, PaymentReceived, ReserveReclaimed,
-    SweepExecutedMulti,
+pub use bridgelet_shared::{
+    AccountCreated, AccountExpired, AccountInfo, AccountStatus, EphemeralAccountInterface,
+    MultiPaymentReceived, Payment, PaymentReceived, ReserveReclaimed, SweepExecutedMulti,
 };
+pub use errors::Error;
 pub use storage::DataKey;
+
+/// Expected network passphrase for this deployment.
+/// Change to `PUBLIC_NETWORK_PASSPHRASE` for mainnet.
+const EXPECTED_PASSPHRASE: &str = bridgelet_shared::passphrase::STANDALONE_PASSPHRASE;
 
 const BASE_RESERVE_STROOPS: i128 = 1_000_000_000;
 
@@ -38,8 +40,11 @@ impl EphemeralAccountContract {
         expiry_ledger: u32,
         recovery_address: Address,
         authorized_controller: Address,
+        authorized_signer: BytesN<32>,
         admin: Address,
     ) -> Result<(), Error> {
+        storage::extend_instance_ttl(&env);
+
         // Check if already initialized
         if storage::is_initialized(&env) {
             return Err(Error::AlreadyInitialized);
@@ -47,6 +52,10 @@ impl EphemeralAccountContract {
 
         // Verify creator authorization
         creator.require_auth();
+
+        // Enforce deploy-time network passphrase to prevent accidental testnet→mainnet deployment
+        bridgelet_shared::passphrase::require_network(&env, EXPECTED_PASSPHRASE)
+            .map_err(|_| Error::Unauthorized)?;
 
         // Validate expiry is in future
         let current_ledger = env.ledger().sequence();
@@ -61,6 +70,7 @@ impl EphemeralAccountContract {
         storage::set_recovery_address(&env, &recovery_address);
         storage::set_status(&env, AccountStatus::Active);
         storage::set_authorized_controller(&env, &authorized_controller);
+        storage::set_authorized_signer(&env, &authorized_signer);
         storage::set_admin(&env, &admin);
         storage::init_reserve_tracking(&env, BASE_RESERVE_STROOPS);
 
@@ -81,10 +91,16 @@ impl EphemeralAccountContract {
     /// Returns Error::InvalidAmount if amount is not positive
     /// Returns Error::DuplicateAsset if asset already has a payment
     pub fn record_payment(env: Env, amount: i128, asset: Address) -> Result<(), Error> {
+        storage::extend_instance_ttl(&env);
+
         // Check initialized
         if !storage::is_initialized(&env) {
             return Err(Error::NotInitialized);
         }
+
+        // Only the authorized controller may record payments
+        let controller = storage::get_authorized_controller(&env).ok_or(Error::Unauthorized)?;
+        controller.require_auth();
 
         // Validate amount
         if amount <= 0 {
@@ -127,17 +143,39 @@ impl EphemeralAccountContract {
         Ok(())
     }
 
-    /// Execute sweep to destination wallet
-    /// Transfers all funds from all assets to the specified destination atomically
+    /// Execute sweep to destination wallet via Ed25519 signature path.
+    ///
+    /// This is the **off-chain signer** sweep path: the caller passes an
+    /// `auth_signature` that was produced off-chain by the `authorized_signer`.
+    /// Authorization is verified against the stored Ed25519 public key.
+    ///
+    /// **Do not call directly** — always route through
+    /// `SweepController::execute_sweep`, which handles signature verification,
+    /// nonce management, and token transfers.
     ///
     /// # Arguments
     /// * `destination` - Recipient wallet address
-    /// * `auth_signature` - Authorization signature from off-chain system
+    /// * `auth_signature` - Ed25519 signature from the authorized off-chain signer
     ///
     /// # Errors
-    /// Returns Error::Unauthorized if authorization fails
-    /// Returns Error::AlreadySwept if sweep already executed
+    /// * `Error::NotInitialized` — contract not yet initialized
+    /// * `Error::AlreadySwept` — account already swept
+    /// * `Error::NoPaymentReceived` — no payment recorded yet
+    /// * `Error::AccountExpired` — past expiry ledger
+    /// * `Error::Unauthorized` — caller is not the authorized controller
+    ///
+    /// # Authorization Flow
+    /// 1. Off-chain: signer signs `hash(destination + nonce + contract_id)`
+    /// 2. Caller invokes `SweepController.execute_sweep(destination, signature)`
+    /// 3. `SweepController` verifies the Ed25519 signature and increments nonce
+    /// 4. `SweepController` calls this function via `authorize_ephemeral_sweep`
+    /// 5. This function validates state, transitions to `Swept`, and reclaims reserve
+    ///
+    /// See also: [`sweep_claim`] for the Soroban-auth claim path used by
+    /// `SweepController::claim`.
     pub fn sweep(env: Env, destination: Address, auth_signature: BytesN<64>) -> Result<(), Error> {
+        storage::extend_instance_ttl(&env);
+
         // Check initialized
         if !storage::is_initialized(&env) {
             return Err(Error::NotInitialized);
@@ -162,85 +200,54 @@ impl EphemeralAccountContract {
         // Note: In production, implement proper signature verification
         // For MVP, we trust the SDK to only call with valid signatures
         Self::verify_sweep_authorization(&env, &destination, &auth_signature)?;
-
-        // Get all payments
-        let payments = storage::get_all_payments(&env);
-        let mut payments_vec = Vec::new(&env);
-        for payment in payments.values() {
-            payments_vec.push_back(payment);
-        }
-
-        // Update status before transfer to prevent reentrancy
-        storage::set_status(&env, AccountStatus::Swept);
-        storage::set_swept_to(&env, &destination);
-
-        // Note: Actual token transfers happen in the SDK via Stellar SDK.
-        // This contract enforces authorization/state transitions and reserve lifecycle.
-        let sweep_id = env.ledger().sequence() as u64;
-        storage::set_last_sweep_id(&env, sweep_id);
-
-        // Emit sweep event once transfer authorization/state update succeeds.
-        events::emit_sweep_executed_multi(&env, destination.clone(), &payments_vec);
-
-        // Reclaim base reserve only after successful sweep state transition.
-        Self::reclaim_reserve_to(&env, &destination, sweep_id)?;
-
-        Ok(())
+        Self::execute_sweep_core(&env, destination)
     }
 
-    /// Sweep initiated by a direct claim — no off-chain signature required.
-    /// Authorization is enforced entirely by requiring the sweep controller
-    /// as the invoker. Used by SweepController.claim() where the recipient
-    /// has already proven ownership via Soroban auth on the outer transaction.
-    ///
-    /// # Errors
-    /// Returns Error::NotInitialized if contract not initialized
-    /// Returns Error::AlreadySwept if sweep already executed
-    /// Returns Error::NoPaymentReceived if no payment has been recorded
-    /// Returns Error::AccountExpired if past expiry ledger
-    /// Returns Error::Unauthorized if caller is not the authorized controller
     pub fn sweep_claim(env: Env, destination: Address) -> Result<(), Error> {
-        if !storage::is_initialized(&env) {
+        let controller = storage::get_authorized_controller(&env).ok_or(Error::Unauthorized)?;
+        controller.require_auth();
+        Self::execute_sweep_core(&env, destination)
+    }
+
+    /// Shared sweep logic: pre-condition checks, state transition, events, reserve reclaim.
+    fn execute_sweep_core(env: &Env, destination: Address) -> Result<(), Error> {
+        storage::extend_instance_ttl(env);
+
+        if !storage::is_initialized(env) {
             return Err(Error::NotInitialized);
         }
-
-        if storage::get_status(&env) == AccountStatus::Swept {
+        if storage::get_status(env) == AccountStatus::Swept {
             return Err(Error::AlreadySwept);
         }
-
-        if !storage::has_payment_received(&env) {
+        if !storage::has_payment_received(env) {
             return Err(Error::NoPaymentReceived);
         }
-
         if Self::is_expired(env.clone()) {
             return Err(Error::AccountExpired);
         }
 
-        // Only the authorized controller may invoke this path
-        let controller = storage::get_authorized_controller(&env).ok_or(Error::Unauthorized)?;
-        controller.require_auth();
-
-        let payments = storage::get_all_payments(&env);
-        let mut payments_vec = Vec::new(&env);
+        let payments = storage::get_all_payments(env);
+        let mut payments_vec = Vec::new(env);
         for payment in payments.values() {
             payments_vec.push_back(payment);
         }
 
-        storage::set_status(&env, AccountStatus::Swept);
-        storage::set_swept_to(&env, &destination);
+        storage::set_status(env, AccountStatus::Swept);
+        storage::set_swept_to(env, &destination);
 
         let sweep_id = env.ledger().sequence() as u64;
-        storage::set_last_sweep_id(&env, sweep_id);
+        storage::set_last_sweep_id(env, sweep_id);
 
-        events::emit_sweep_executed_multi(&env, destination.clone(), &payments_vec);
-
-        Self::reclaim_reserve_to(&env, &destination, sweep_id)?;
+        events::emit_sweep_executed_multi(env, destination.clone(), &payments_vec);
+        Self::reclaim_reserve_to(env, &destination, sweep_id)?;
 
         Ok(())
     }
 
     /// Check if account has expired
     pub fn is_expired(env: Env) -> bool {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return false;
         }
@@ -251,8 +258,15 @@ impl EphemeralAccountContract {
         current_ledger >= expiry_ledger
     }
 
+    /// Check if the account has been initialized.
+    pub fn is_initialized(env: Env) -> bool {
+        storage::is_initialized(&env)
+    }
+
     /// Get current account status
     pub fn get_status(env: Env) -> AccountStatus {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return AccountStatus::Active;
         }
@@ -308,6 +322,8 @@ impl EphemeralAccountContract {
 
     /// Remaining reserve amount (stroops) still eligible for reclaim.
     pub fn get_reserve_remaining(env: Env) -> i128 {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return 0;
         }
@@ -317,6 +333,8 @@ impl EphemeralAccountContract {
 
     /// Tracked reserve currently available for transfer (stroops).
     pub fn get_reserve_available(env: Env) -> i128 {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return 0;
         }
@@ -326,6 +344,8 @@ impl EphemeralAccountContract {
 
     /// Whether reserve has been fully reclaimed.
     pub fn is_reserve_reclaimed(env: Env) -> bool {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return false;
         }
@@ -353,6 +373,8 @@ impl EphemeralAccountContract {
 
     /// Get account information
     pub fn get_info(env: Env) -> Result<AccountInfo, Error> {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return Err(Error::NotInitialized);
         }
@@ -362,7 +384,7 @@ impl EphemeralAccountContract {
 
         Ok(AccountInfo {
             creator: storage::get_creator(&env),
-            status: storage::get_status(&env),
+            status: Self::get_status(env.clone()),
             expiry_ledger: storage::get_expiry_ledger(&env),
             recovery_address: storage::get_recovery_address(&env),
             payment_received: payment_count > 0,
@@ -386,6 +408,8 @@ impl EphemeralAccountContract {
     /// Returns Error::Unauthorized if caller is neither creator nor recovery_address
     /// Returns Error::InvalidStatus if already swept or recovered
     pub fn recover(env: Env, caller: Address) -> Result<(), Error> {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return Err(Error::NotInitialized);
         }
@@ -420,6 +444,8 @@ impl EphemeralAccountContract {
     /// # Errors
     /// Returns Error::NotUpgradeAdmin if caller is not the stored admin
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return Err(Error::NotInitialized);
         }
@@ -436,6 +462,8 @@ impl EphemeralAccountContract {
     ///
     /// Returns `(payments, error_code)` where `error_code` is 0 on success.
     pub fn simulate_sweep(env: Env, destination: Address) -> (Vec<Payment>, u32) {
+        storage::extend_instance_ttl(&env);
+
         if !storage::is_initialized(&env) {
             return (Vec::new(&env), Error::NotInitialized as u32);
         }
@@ -501,11 +529,43 @@ impl EphemeralAccountContract {
 
     fn verify_sweep_authorization(
         env: &Env,
-        _destination: &Address,
-        _signature: &BytesN<64>,
+        destination: &Address,
+        signature: &BytesN<64>,
     ) -> Result<(), Error> {
         let controller = storage::get_authorized_controller(env).ok_or(Error::Unauthorized)?;
         controller.require_auth();
+
+        // Verify the Ed25519 signature against the stored authorized signer
+        let signer = storage::get_authorized_signer(env).ok_or(Error::Unauthorized)?;
+
+        // Construct the message: hash(destination + nonce + contract_id)
+        let nonce = storage::get_last_sweep_id(env);
+        let contract_id = env.current_contract_address();
+
+        let mut message = soroban_sdk::Bytes::new(env);
+        let dest_bytes = destination.to_xdr(env);
+        message.append(&dest_bytes);
+
+        // Nonce as big-endian u64
+        message.push_back(((nonce >> 56) & 0xFF) as u8);
+        message.push_back(((nonce >> 48) & 0xFF) as u8);
+        message.push_back(((nonce >> 40) & 0xFF) as u8);
+        message.push_back(((nonce >> 32) & 0xFF) as u8);
+        message.push_back(((nonce >> 24) & 0xFF) as u8);
+        message.push_back(((nonce >> 16) & 0xFF) as u8);
+        message.push_back(((nonce >> 8) & 0xFF) as u8);
+        message.push_back((nonce & 0xFF) as u8);
+
+        let contract_bytes = contract_id.to_xdr(env);
+        message.append(&contract_bytes);
+
+        let hash = env.crypto().sha256(&message);
+        let hash_bytes: BytesN<32> = hash.into();
+
+        // Verify Ed25519 signature
+        env.crypto()
+            .ed25519_verify(&signer, &hash_bytes.into(), signature);
+
         Ok(())
     }
 
@@ -575,5 +635,51 @@ impl EphemeralAccountContract {
         storage::set_reserve_event_count(env, next_count);
 
         Ok(())
+    }
+}
+
+/// Issue #43: conform to the shared interface for type-safe SDK integration.
+/// Each method delegates to the inherent contract implementation above.
+impl EphemeralAccountInterface for EphemeralAccountContract {
+    type Error = Error;
+
+    fn initialize(
+        env: Env,
+        creator: Address,
+        expiry_ledger: u32,
+        recovery_address: Address,
+        authorized_controller: Address,
+        authorized_signer: BytesN<32>,
+        admin: Address,
+    ) -> Result<(), Error> {
+        Self::initialize(
+            env,
+            creator,
+            expiry_ledger,
+            recovery_address,
+            authorized_controller,
+            authorized_signer,
+            admin,
+        )
+    }
+
+    fn record_payment(env: Env, amount: i128, asset: Address) -> Result<(), Error> {
+        Self::record_payment(env, amount, asset)
+    }
+
+    fn sweep(env: Env, destination: Address, auth_signature: BytesN<64>) -> Result<(), Error> {
+        Self::sweep(env, destination, auth_signature)
+    }
+
+    fn sweep_claim(env: Env, destination: Address) -> Result<(), Error> {
+        Self::sweep_claim(env, destination)
+    }
+
+    fn is_expired(env: Env) -> bool {
+        Self::is_expired(env)
+    }
+
+    fn is_initialized(env: Env) -> bool {
+        Self::is_initialized(env)
     }
 }

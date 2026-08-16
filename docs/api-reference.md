@@ -21,6 +21,7 @@ fn initialize(
     expiry_ledger: u32,
     recovery_address: Address,
     authorized_controller: Address,
+    admin: Address,
 ) -> Result<(), Error>
 ```
 
@@ -29,7 +30,8 @@ fn initialize(
 | `creator` | `Address` | The account that created this contract. Must authorize this call. |
 | `expiry_ledger` | `u32` | Ledger sequence number at which the account expires. Must be in the future. |
 | `recovery_address` | `Address` | Address that receives funds if the account expires without being swept. |
-| `authorized_controller` | `Address` | The `SweepController` contract address authorized to call `sweep()` on behalf of this account. |
+| `authorized_controller` | `Address` | The `SweepController` contract address authorized to call `sweep()` / `sweep_claim()` on behalf of this account. |
+| `admin` | `Address` | Address authorized to perform WASM contract upgrades (`upgrade`). |
 
 **Returns:** `Ok(())` on success.
 
@@ -285,20 +287,25 @@ fn get_reserve_reclaim_event_count(env: Env) -> u32
 
 | Code | Variant | Description |
 | :--- | :--- | :--- |
-| 1 | `AlreadyInitialized` | Contract already initialized. |
-| 2 | `NotInitialized` | Contract not initialized. |
-| 3 | `PaymentAlreadyReceived` | Deprecated. Use `DuplicateAsset` (code 13). |
-| 4 | `InvalidAmount` | Payment amount is zero or negative. |
-| 5 | `InvalidExpiry` | `expiry_ledger` is not in the future. |
-| 6 | `NotExpired` | Attempted to expire before `expiry_ledger`. |
-| 7 | `AlreadySwept` | Account already swept. |
-| 8 | `Unauthorized` | `authorized_controller` did not authorize the call. |
-| 9 | `InvalidSignature` | Cryptographic signature format is invalid. |
-| 10 | `NoPaymentReceived` | Cannot sweep without a recorded payment. |
-| 11 | `AccountExpired` | Cannot sweep an expired account. |
-| 12 | `InvalidStatus` | Action is invalid for the current account status. |
-| 13 | `DuplicateAsset` | Asset already has a recorded payment. |
-| 14 | `TooManyPayments` | Maximum of 10 distinct assets reached. |
+As of [Issue #248](https://github.com/bridgelet-org/bridgelet-core/issues/248), error codes are namespaced per contract in 1000-wide blocks so a bare numeric code is never ambiguous across contracts. This contract owns the 1000-1999 range.
+
+| Code | Variant | Description |
+| :--- | :--- | :--- |
+| 1000 | `AlreadyInitialized` | Contract already initialized. |
+| 1001 | `NotInitialized` | Contract not initialized. |
+| 1002 | `PaymentAlreadyReceived` | Deprecated. Use `DuplicateAsset` (code 1012). |
+| 1003 | `InvalidAmount` | Payment amount is zero or negative. |
+| 1004 | `InvalidExpiry` | `expiry_ledger` is not in the future. |
+| 1005 | `NotExpired` | Attempted to expire before `expiry_ledger`. |
+| 1006 | `AlreadySwept` | Account already swept. |
+| 1007 | `Unauthorized` | `authorized_controller` did not authorize the call. |
+| 1008 | `InvalidSignature` | Cryptographic signature format is invalid. |
+| 1009 | `NoPaymentReceived` | Cannot sweep without a recorded payment. |
+| 1010 | `AccountExpired` | Cannot sweep an expired account. |
+| 1011 | `InvalidStatus` | Action is invalid for the current account status. |
+| 1012 | `DuplicateAsset` | Asset already has a recorded payment. |
+| 1013 | `TooManyPayments` | Maximum of 10 distinct assets reached. |
+| 1014 | `NotUpgradeAdmin` | Caller is not authorized to perform contract upgrades. |
 
 ---
 
@@ -316,30 +323,14 @@ Sets up the controller with an authorized Ed25519 signer and an optional locked 
 fn initialize(
     env: Env,
     creator: Address,
-    authorized_signer: BytesN<32>,
-    authorized_destination: Option<Address>,
+    authorized_signer: BytesN<32>
 ) -> Result<(), Error>
 ```
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `creator` | `Address` | Address that owns this controller instance. Required to authorize future `update_authorized_destination` calls. Must authorize this call. |
-| `authorized_signer` | `BytesN<32>` | Ed25519 public key used to verify all sweep authorization signatures. |
-| `authorized_destination` | `Option<Address>` | If `Some(addr)`, the controller operates in **locked mode**: sweeps can only transfer to this specific address. If `None`, any destination is accepted (**flexible mode**). |
-
-**Returns:** `Ok(())` on success.
-
-**Errors:**
-
-| Error | Condition |
-| :--- | :--- |
-| `AuthorizationFailed` | `initialize` has already been called. |
-
-**Auth required:** `creator.require_auth()`
-
-**Events emitted:** `DestinationAuthorized { destination }` (only when `authorized_destination` is `Some`).
-
----
+| `creator` | `Address` | Address allowed to manage controller configuration. |
+| `authorized_signer` | `BytesN<32>` | Ed25519 public key for verifying sweep signatures. |
 
 #### `execute_sweep`
 
@@ -354,69 +345,18 @@ fn execute_sweep(
 ) -> Result<(), Error>
 ```
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `ephemeral_account` | `Address` | Address of the `EphemeralAccount` contract to sweep. |
-| `destination` | `Address` | Recipient wallet address for all swept funds. |
-| `auth_signature` | `BytesN<64>` | Ed25519 signature over `SHA256(destination_xdr \|\| nonce_u64_be \|\| contract_id_xdr)`. Must be signed by the key in `authorized_signer`. |
-
-**Returns:** `Ok(())` on success.
-
-**Errors:**
-
-| Error | Condition |
-| :--- | :--- |
-| `UnauthorizedDestination` | Controller is in locked mode and `destination` ≠ `authorized_destination`. |
-| `AuthorizationFailed` | `authorized_signer` is not set (controller not initialized). |
-| `AuthorizedSignerNotSet` | Ed25519 public key has not been stored. |
-| `SignatureVerificationFailed` | Signature does not verify against the current nonce and destination. |
-| `AccountNotReady` | Ephemeral account has no recorded payments or zero total amount. |
-| `TransferFailed` | A SEP-41 token `transfer()` call failed. |
-
-**Signature message format:**
-
-```
-message = SHA256(
-    destination.to_xdr()
-    || nonce as u64 big-endian (8 bytes)
-    || controller_contract_address.to_xdr()
-)
-```
-
-The nonce is incremented after each successful `execute_sweep` call to prevent replay attacks.
-
-**Events emitted:** `SweepCompleted { ephemeral_account, destination, amount }`
-
----
-
 #### `claim`
-
-Gas-free claim path for the recipient. The recipient signs a Soroban auth entry for `claim(recipient, ephemeral_account)` only; a relayer or SDK submits the transaction and pays fees.
-
-Internally the controller uses `authorize_as_current_contract()` to satisfy `authorized_controller.require_auth()` inside `EphemeralAccount::sweep()`.
+Experimental gas-free claim flow. The recipient authorizes the invocation via
+Soroban auth entries, and a relayer/SDK can submit the transaction and pay the
+fees.
 
 ```rust
-fn claim(env: Env, recipient: Address, ephemeral_account: Address) -> Result<(), Error>
+fn claim(
+    env: Env,
+    recipient: Address,
+    ephemeral_account: Address
+) -> Result<(), Error>
 ```
-
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `recipient` | `Address` | The address claiming the funds. Must authorize this call. |
-| `ephemeral_account` | `Address` | Address of the `EphemeralAccount` contract to sweep. |
-
-**Returns:** `Ok(())` on success.
-
-**Errors:**
-
-| Error | Condition |
-| :--- | :--- |
-| `UnauthorizedDestination` | Controller is in locked mode and `recipient` ≠ `authorized_destination`. |
-
-**Auth required:** `recipient.require_auth()`
-
-**Events emitted:** `SweepCompleted { ephemeral_account, destination: recipient, amount }`
-
----
 
 #### `can_sweep`
 
@@ -434,7 +374,9 @@ fn can_sweep(env: Env, ephemeral_account: Address) -> bool
 
 #### `update_authorized_destination`
 
-Allows the creator to update the locked destination before any sweep has occurred. Fails if a sweep has already been executed (nonce > 0).
+Allows the creator to update the locked destination before any signed sweep has occurred. Checks that `nonce == 0` (returns `AccountAlreadySwept` if `nonce > 0`).
+
+> **Note on Nonce Tracking:** Because `execute_sweep()` increments `nonce` on success while `claim()` does not currently increment `nonce`, this guard specifically tracks whether `execute_sweep()` has been executed. If accounts were swept exclusively via `claim()`, `nonce` remains `0`.
 
 ```rust
 fn update_authorized_destination(env: Env, new_destination: Address) -> Result<(), Error>
@@ -451,7 +393,7 @@ fn update_authorized_destination(env: Env, new_destination: Address) -> Result<(
 | Error | Condition |
 | :--- | :--- |
 | `AuthorizationFailed` | Caller is not the creator or controller is not initialized. |
-| `AccountAlreadySwept` | At least one sweep has been executed (nonce > 0); destination is now immutable. |
+| `AccountAlreadySwept` | At least one signed sweep has been executed (nonce > 0); destination is now immutable. |
 
 **Auth required:** `creator.require_auth()`
 
@@ -473,18 +415,22 @@ fn update_authorized_destination(env: Env, new_destination: Address) -> Result<(
 
 | Code | Variant | Description |
 | :--- | :--- | :--- |
-| 1 | `InvalidAccount` | Account is not in a valid state for the requested operation. |
-| 2 | `TransferFailed` | A SEP-41 token transfer failed. |
-| 3 | `AuthorizationFailed` | Signature invalid, caller not authorized, or already initialized. |
-| 4 | `InsufficientBalance` | Reserved for future use. |
-| 5 | `AccountNotReady` | Account has no payments or zero total amount. |
-| 6 | `AccountExpired` | Account has expired. |
-| 7 | `AccountAlreadySwept` | A sweep has already been executed; destination cannot be changed. |
-| 8 | `InvalidSignature` | Signature format is invalid. |
-| 9 | `SignatureVerificationFailed` | Ed25519 verification failure. |
-| 10 | `AuthorizedSignerNotSet` | Controller was not initialized with an authorized signer. |
-| 11 | `InvalidNonce` | Security nonce is invalid or out of sequence. |
-| 13 | `UnauthorizedDestination` | Destination does not match the locked `authorized_destination`. |
+Per [Issue #248](https://github.com/bridgelet-org/bridgelet-core/issues/248), this contract owns the 2000-2999 error code range. Code 2011 is intentionally unused, preserving a gap from the original enum.
+
+| Code | Variant | Description |
+| :--- | :--- | :--- |
+| 2000 | `InvalidAccount` | Account is not in a valid state for the requested operation. |
+| 2001 | `TransferFailed` | A SEP-41 token transfer failed. |
+| 2002 | `AuthorizationFailed` | Signature invalid, caller not authorized, or already initialized. |
+| 2003 | `InsufficientBalance` | Reserved for future use. |
+| 2004 | `AccountNotReady` | Account has no payments or zero total amount. |
+| 2005 | `AccountExpired` | Account has expired. |
+| 2006 | `AccountAlreadySwept` | A sweep has already been executed; destination cannot be changed. |
+| 2007 | `InvalidSignature` | Signature format is invalid. |
+| 2008 | `SignatureVerificationFailed` | Ed25519 verification failure. |
+| 2009 | `AuthorizedSignerNotSet` | Controller was not initialized with an authorized signer. |
+| 2010 | `InvalidNonce` | Security nonce is invalid or out of sequence. |
+| 2012 | `UnauthorizedDestination` | Destination does not match the locked `authorized_destination`. |
 
 ---
 
