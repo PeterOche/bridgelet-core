@@ -55,6 +55,8 @@ jobs:
         cargo test --verbose
         cd ../reserve_contract
         cargo test --verbose
+        cd ../timelock_controller
+        cargo test --verbose
 
     - name: Check format
       run: |
@@ -63,6 +65,8 @@ jobs:
         cd ../sweep_controller
         cargo fmt -- --check
         cd ../reserve_contract
+        cargo fmt -- --check
+        cd ../timelock_controller
         cargo fmt -- --check
 
     - name: Run clippy
@@ -73,6 +77,8 @@ jobs:
         cargo clippy -- -D warnings
         cd ../reserve_contract
         cargo clippy -- -D warnings
+        cd ../timelock_controller
+        cargo clippy -- -D warnings
 
     - name: Build all contracts
       run: |
@@ -81,6 +87,8 @@ jobs:
         cd ../sweep_controller
         cargo build --target wasm32v1-none --release
         cd ../reserve_contract
+        cargo build --target wasm32v1-none --release
+        cd ../timelock_controller
         cargo build --target wasm32v1-none --release
 
     - name: Upload WASM artifacts
@@ -91,4 +99,5 @@ jobs:
           contracts/ephemeral_account/target/wasm32v1-none/release/*.wasm
           contracts/sweep_controller/target/wasm32v1-none/release/*.wasm
           contracts/reserve_contract/target/wasm32v1-none/release/*.wasm
+          contracts/timelock_controller/target/wasm32v1-none/release/*.wasm
         retention-days: 30
