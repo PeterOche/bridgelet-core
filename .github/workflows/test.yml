@@ -59,6 +59,8 @@ jobs:
         cargo test --verbose
         cd ../multisig_approval
         cargo test --verbose
+        cd ../fee_splitter
+        cargo test --verbose
 
     - name: Check format
       run: |
@@ -71,6 +73,8 @@ jobs:
         cd ../timelock_controller
         cargo fmt -- --check
         cd ../multisig_approval
+        cargo fmt -- --check
+        cd ../fee_splitter
         cargo fmt -- --check
 
     - name: Run clippy
@@ -85,6 +89,8 @@ jobs:
         cargo clippy -- -D warnings
         cd ../multisig_approval
         cargo clippy -- -D warnings
+        cd ../fee_splitter
+        cargo clippy -- -D warnings
 
     - name: Build all contracts
       run: |
@@ -98,6 +104,8 @@ jobs:
         cargo build --target wasm32v1-none --release
         cd ../multisig_approval
         cargo build --target wasm32v1-none --release
+        cd ../fee_splitter
+        cargo build --target wasm32v1-none --release
 
     - name: Upload WASM artifacts
       uses: actions/upload-artifact@v4
@@ -109,4 +117,5 @@ jobs:
           contracts/reserve_contract/target/wasm32v1-none/release/*.wasm
           contracts/timelock_controller/target/wasm32v1-none/release/*.wasm
           contracts/multisig_approval/target/wasm32v1-none/release/*.wasm
+          contracts/fee_splitter/target/wasm32v1-none/release/*.wasm
         retention-days: 30
