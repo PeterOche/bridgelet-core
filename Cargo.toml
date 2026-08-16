@@ -8,6 +8,7 @@ members = [
     "contracts/account_factory",
     "contracts/timelock_controller",
     "contracts/multisig_approval",
+    "contracts/fee_splitter",
 ]
 
 # Issues #41 / #42: soroban-sdk is pinned to 22.0.0 in exactly one place — here.
