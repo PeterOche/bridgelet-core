@@ -1,6 +1,22 @@
+//! Storage key audit (Issue #25).
+//!
+//! All keys live in the [`DataKey`] enum and are read/written exclusively
+//! through `env.storage().instance()`. Soroban scopes instance storage to the
+//! individual deployed contract instance, so keys are already namespaced by
+//! the contract's own address at the host level — two deployments of this
+//! contract cannot collide, and no manual address prefix is required.
+//!
+//! Within a single instance, every `#[contracttype]` enum variant serialises
+//! to a distinct key. The variants below are unique and non-overlapping, so
+//! there are no intra-contract collisions either.
+
 use soroban_sdk::{contracttype, Address, BytesN, Env};
 
-/// Data keys for contract storage
+/// Data keys for contract storage.
+///
+/// Each variant is a distinct instance-storage key. Instance storage is
+/// automatically namespaced per deployed contract instance by the Soroban
+/// host, preventing cross-instance collisions.
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -12,6 +28,12 @@ pub enum DataKey {
     AuthorizedDestination,
     /// Creator address (the address that initialized the contract)
     Creator,
+    /// Pending new signer public key (set by update_authorized_signer, takes effect after time-lock)
+    PendingSigner,
+    /// Ledger sequence at which the pending signer becomes effective
+    PendingSignerEffectiveLedger,
+    /// Storage schema version for migrations
+    StorageVersion,
 }
 
 /// Set the authorized signer public key
@@ -124,4 +146,47 @@ pub fn set_creator(env: &Env, creator: &Address) {
 /// The creator address, or None if not set
 pub fn get_creator(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Creator)
+}
+
+const INSTANCE_TTL_THRESHOLD: u32 = 100;
+const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
+
+pub fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+}
+
+/// Set the pending new signer public key (for time-locked signer rotation)
+pub fn set_pending_signer(env: &Env, signer: &BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingSigner, signer);
+}
+
+/// Get the pending new signer public key
+pub fn get_pending_signer(env: &Env) -> Option<BytesN<32>> {
+    env.storage().instance().get(&DataKey::PendingSigner)
+}
+
+/// Set the ledger at which the pending signer becomes effective
+pub fn set_pending_signer_effective_ledger(env: &Env, ledger: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingSignerEffectiveLedger, &ledger);
+}
+
+/// Get the ledger at which the pending signer becomes effective
+pub fn get_pending_signer_effective_ledger(env: &Env) -> Option<u32> {
+    env.storage()
+        .instance()
+        .get(&DataKey::PendingSignerEffectiveLedger)
+}
+
+/// Clear pending signer state (call after applying the new signer)
+pub fn clear_pending_signer(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingSigner);
+    env.storage()
+        .instance()
+        .remove(&DataKey::PendingSignerEffectiveLedger);
 }

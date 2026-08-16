@@ -6,9 +6,17 @@ members = [
     "contracts/shared",
     "contracts/reserve_contract",
     "contracts/account_factory",
-    "contracts/batch_sweep_queue",
-    "contracts/recovery_registry",
+    "contracts/timelock_controller",
+    "contracts/multisig_approval",
+    "contracts/fee_splitter",
 ]
+
+# Issues #41 / #42: soroban-sdk is pinned to 22.0.0 in exactly one place — here.
+# Every workspace member inherits it via `soroban-sdk = { workspace = true }`,
+# so no contract declares its own version. See docs/soroban-sdk-version-policy.md
+# for the upgrade process (bump here only, then verify on testnet before merge).
+[workspace.dependencies]
+soroban-sdk = "=22.0.11"
 
 [profile.release]
 opt-level = "z"
