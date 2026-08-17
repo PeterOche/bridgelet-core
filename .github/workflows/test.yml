@@ -71,6 +71,8 @@ jobs:
         cargo test --verbose
         cd ../asset_allowlist
         cargo test --verbose
+        cd ../access_controller
+        cargo test --verbose
 
     - name: Check format
       run: |
@@ -95,6 +97,8 @@ jobs:
         cd ../version_registry
         cargo fmt -- --check
         cd ../asset_allowlist
+        cargo fmt -- --check
+        cd ../access_controller
         cargo fmt -- --check
 
     - name: Run clippy
@@ -121,6 +125,8 @@ jobs:
         cargo clippy -- -D warnings
         cd ../asset_allowlist
         cargo clippy -- -D warnings
+        cd ../access_controller
+        cargo clippy -- -D warnings
 
     - name: Build all contracts
       run: |
@@ -146,6 +152,8 @@ jobs:
         cargo build --target wasm32v1-none --release
         cd ../asset_allowlist
         cargo build --target wasm32v1-none --release
+        cd ../access_controller
+        cargo build --target wasm32v1-none --release
 
     - name: Upload WASM artifacts
       uses: actions/upload-artifact@v4
@@ -163,4 +171,5 @@ jobs:
           contracts/audit_log/target/wasm32v1-none/release/*.wasm
           contracts/version_registry/target/wasm32v1-none/release/*.wasm
           contracts/asset_allowlist/target/wasm32v1-none/release/*.wasm
+          contracts/access_controller/target/wasm32v1-none/release/*.wasm
         retention-days: 30
