@@ -18,6 +18,7 @@ members = [
     "contracts/asset_allowlist",
     "contracts/access_controller",
     "contracts/compliance_oracle",
+    "contracts/claimable_balance_registry",
 ]
 
 # Issues #41 / #42: soroban-sdk is pinned to 22.0.0 in exactly one place — here.
