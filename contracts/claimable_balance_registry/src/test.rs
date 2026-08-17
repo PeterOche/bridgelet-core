@@ -6,7 +6,12 @@ use soroban_sdk::{Address, Env};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-fn setup() -> (Env, ClaimableBalanceRegistryClient<'static>, Address, Address) {
+fn setup() -> (
+    Env,
+    ClaimableBalanceRegistryClient<'static>,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(ClaimableBalanceRegistry, ());
@@ -24,10 +29,7 @@ fn setup() -> (Env, ClaimableBalanceRegistryClient<'static>, Address, Address) {
 #[test]
 fn test_initialize_twice_fails() {
     let (env, client, admin, writer) = setup();
-    let err = client
-        .try_initialize(&admin, &writer)
-        .unwrap_err()
-        .unwrap();
+    let err = client.try_initialize(&admin, &writer).unwrap_err().unwrap();
     assert_eq!(err, Error::AlreadyInitialized);
 }
 
@@ -132,10 +134,7 @@ fn test_double_claim_fails() {
     client.record(&writer, &recovery, &asset, &750);
     client.claim(&recovery, &asset);
 
-    let err = client
-        .try_claim(&recovery, &asset)
-        .unwrap_err()
-        .unwrap();
+    let err = client.try_claim(&recovery, &asset).unwrap_err().unwrap();
     assert_eq!(err, Error::NothingToClaim);
 }
 
@@ -145,10 +144,7 @@ fn test_claim_with_no_record_fails() {
     let recovery = Address::generate(&env);
     let asset = Address::generate(&env);
 
-    let err = client
-        .try_claim(&recovery, &asset)
-        .unwrap_err()
-        .unwrap();
+    let err = client.try_claim(&recovery, &asset).unwrap_err().unwrap();
     assert_eq!(err, Error::NothingToClaim);
 }
 
