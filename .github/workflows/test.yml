@@ -65,6 +65,8 @@ jobs:
         cargo test --verbose
         cd ../allowlist_registry
         cargo test --verbose
+        cd ../audit_log
+        cargo test --verbose
         cd ../version_registry
         cargo test --verbose
         cd ../asset_allowlist
@@ -87,6 +89,8 @@ jobs:
         cd ../nonce_registry
         cargo fmt -- --check
         cd ../allowlist_registry
+        cargo fmt -- --check
+        cd ../audit_log
         cargo fmt -- --check
         cd ../version_registry
         cargo fmt -- --check
@@ -111,6 +115,8 @@ jobs:
         cargo clippy -- -D warnings
         cd ../allowlist_registry
         cargo clippy -- -D warnings
+        cd ../audit_log
+        cargo clippy -- -D warnings
         cd ../version_registry
         cargo clippy -- -D warnings
         cd ../asset_allowlist
@@ -134,6 +140,8 @@ jobs:
         cargo build --target wasm32v1-none --release
         cd ../allowlist_registry
         cargo build --target wasm32v1-none --release
+        cd ../audit_log
+        cargo build --target wasm32v1-none --release
         cd ../version_registry
         cargo build --target wasm32v1-none --release
         cd ../asset_allowlist
@@ -152,6 +160,7 @@ jobs:
           contracts/fee_splitter/target/wasm32v1-none/release/*.wasm
           contracts/nonce_registry/target/wasm32v1-none/release/*.wasm
           contracts/allowlist_registry/target/wasm32v1-none/release/*.wasm
+          contracts/audit_log/target/wasm32v1-none/release/*.wasm
           contracts/version_registry/target/wasm32v1-none/release/*.wasm
           contracts/asset_allowlist/target/wasm32v1-none/release/*.wasm
         retention-days: 30

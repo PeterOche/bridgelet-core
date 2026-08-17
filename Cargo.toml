@@ -13,6 +13,7 @@ members = [
     "contracts/fee_splitter",
     "contracts/nonce_registry",
     "contracts/allowlist_registry",
+    "contracts/audit_log",
     "contracts/version_registry",
     "contracts/asset_allowlist",
 ]
