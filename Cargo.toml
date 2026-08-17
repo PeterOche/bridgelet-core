@@ -14,6 +14,7 @@ members = [
     "contracts/nonce_registry",
     "contracts/allowlist_registry",
     "contracts/version_registry",
+    "contracts/asset_allowlist",
 ]
 
 # Issues #41 / #42: soroban-sdk is pinned to 22.0.0 in exactly one place — here.
