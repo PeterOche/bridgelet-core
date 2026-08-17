@@ -75,8 +75,6 @@ jobs:
         cargo test --verbose
         cd ../claimable_balance_registry
         cargo test --verbose
-        cd ../expiry_scheduler
-        cargo test --verbose
 
     - name: Check format
       run: |
@@ -105,8 +103,6 @@ jobs:
         cd ../access_controller
         cargo fmt -- --check
         cd ../claimable_balance_registry
-        cargo fmt -- --check
-        cd ../expiry_scheduler
         cargo fmt -- --check
 
     - name: Run clippy
@@ -137,8 +133,6 @@ jobs:
         cargo clippy -- -D warnings
         cd ../claimable_balance_registry
         cargo clippy -- -D warnings
-        cd ../expiry_scheduler
-        cargo clippy -- -D warnings
 
     - name: Build all contracts
       run: |
@@ -168,8 +162,6 @@ jobs:
         cargo build --target wasm32v1-none --release
         cd ../claimable_balance_registry
         cargo build --target wasm32v1-none --release
-        cd ../expiry_scheduler
-        cargo build --target wasm32v1-none --release
 
     - name: Upload WASM artifacts
       uses: actions/upload-artifact@v4
@@ -177,7 +169,6 @@ jobs:
         name: wasm-contracts
         path: |
           contracts/ephemeral_account/target/wasm32v1-none/release/*.wasm
-          contracts/expiry_scheduler/target/wasm32v1-none/release/*.wasm
           contracts/sweep_controller/target/wasm32v1-none/release/*.wasm
           contracts/reserve_contract/target/wasm32v1-none/release/*.wasm
           contracts/timelock_controller/target/wasm32v1-none/release/*.wasm

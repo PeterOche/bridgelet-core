@@ -18,7 +18,6 @@ members = [
     "contracts/asset_allowlist",
     "contracts/access_controller",
     "contracts/claimable_balance_registry",
-    "contracts/expiry_scheduler",
 ]
 
 # Issues #41 / #42: soroban-sdk is pinned to 22.0.0 in exactly one place — here.
