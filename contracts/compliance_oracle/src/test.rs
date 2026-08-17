@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use soroban_sdk::{symbol_short, testutils::Address as _, testutils::Ledger, Address, Env, Symbol};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -31,7 +30,7 @@ fn status_blocked(env: &Env) -> Symbol {
 
 #[test]
 fn test_initialize_twice_fails() {
-    let (env, client, admin, attestor) = setup();
+    let (_env, client, admin, attestor) = setup();
     let err = client
         .try_initialize(&admin, &attestor)
         .unwrap_err()
