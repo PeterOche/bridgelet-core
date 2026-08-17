@@ -17,6 +17,7 @@ members = [
     "contracts/version_registry",
     "contracts/asset_allowlist",
     "contracts/access_controller",
+    "contracts/compliance_oracle",
     "contracts/claimable_balance_registry",
     "contracts/notification_registry",
 ]

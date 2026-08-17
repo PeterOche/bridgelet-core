@@ -73,6 +73,8 @@ jobs:
         cargo test --verbose
         cd ../access_controller
         cargo test --verbose
+        cd ../compliance_oracle
+        cargo test --verbose
         cd ../claimable_balance_registry
         cargo test --verbose
         cd ../notification_registry
@@ -103,6 +105,8 @@ jobs:
         cd ../asset_allowlist
         cargo fmt -- --check
         cd ../access_controller
+        cargo fmt -- --check
+        cd ../compliance_oracle
         cargo fmt -- --check
         cd ../claimable_balance_registry
         cargo fmt -- --check
@@ -135,6 +139,8 @@ jobs:
         cargo clippy -- -D warnings
         cd ../access_controller
         cargo clippy -- -D warnings
+        cd ../compliance_oracle
+        cargo clippy -- -D warnings
         cd ../claimable_balance_registry
         cargo clippy -- -D warnings
         cd ../notification_registry
@@ -166,6 +172,8 @@ jobs:
         cargo build --target wasm32v1-none --release
         cd ../access_controller
         cargo build --target wasm32v1-none --release
+        cd ../compliance_oracle
+        cargo build --target wasm32v1-none --release
         cd ../claimable_balance_registry
         cargo build --target wasm32v1-none --release
         cd ../notification_registry
@@ -188,6 +196,7 @@ jobs:
           contracts/version_registry/target/wasm32v1-none/release/*.wasm
           contracts/asset_allowlist/target/wasm32v1-none/release/*.wasm
           contracts/access_controller/target/wasm32v1-none/release/*.wasm
+          contracts/compliance_oracle/target/wasm32v1-none/release/*.wasm
           contracts/claimable_balance_registry/target/wasm32v1-none/release/*.wasm
           contracts/notification_registry/target/wasm32v1-none/release/*.wasm
         retention-days: 30
